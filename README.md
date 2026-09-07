@@ -3,13 +3,16 @@ A quick installer to add a plugin to ~/.opencode/plugins/ so you get notificatio
 
 There are also pop-ups if you allow notifications the terminal where you run opencode. See Mac Settings > Notifications
 
-## Build
-```chmod +x build.sh```
-
-```./build.sh```
-
 ## Install
+
+Clone this repo and from the folder run:
 
 ```chmod +x install-notifications```
 
 ```$ ./install-notifications```
+
+## Build
+
+```chmod +x build.sh```
+
+```./build.sh```

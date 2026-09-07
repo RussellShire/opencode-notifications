@@ -1,27 +1,30 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/term"
 )
+
+//go:embed template.js
+var pluginTemplate string
 
 var (
 	idleSounds = []string{"Glass", "Ping", "Hero", "Submarine", "Purr"}
 	permSounds = []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}
 )
 
-// Plays a macOS sound in the background without blocking execution
 func playSound(soundName string) {
 	soundPath := fmt.Sprintf("/System/Library/Sounds/%s.aiff", soundName)
 	cmd := exec.Command("afplay", soundPath)
 	_ = cmd.Start()
 }
 
-// Renders an interactive menu navigated with UP/DOWN arrow keys
 func selectMenu(title string, options []string) (string, error) {
 	// Put terminal into raw mode to capture individual keypresses
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -80,13 +83,37 @@ func selectMenu(title string, options []string) (string, error) {
 	}
 }
 
-// Helper to confirm selection
 func confirmChoice(prompt string) bool {
 	choice, err := selectMenu(prompt, []string{"Yes", "No"})
 	if err != nil {
 		return false
 	}
 	return choice == "Yes"
+}
+
+func writePluginFile(idleSound, permSound string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to locate home directory: %w", err)
+	}
+
+	pluginDir := filepath.Join(homeDir, ".opencode", "plugins")
+	pluginPath := filepath.Join(pluginDir, "notifications.js")
+
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Replace the placeholders with the selected sound names
+	content := strings.ReplaceAll(pluginTemplate, "{{IDLE_SOUND}}", idleSound)
+	content = strings.ReplaceAll(content, "{{PERM_SOUND}}", permSound)
+
+	// Write out the processed file
+	if err := os.WriteFile(pluginPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return nil
 }
 
 func main() {
@@ -96,7 +123,6 @@ func main() {
 
 	var idleSound, permSound string
 
-	// 1. Select Idle Sound
 	for {
 		selected, err := selectMenu("Choose a sound for Session Completion (idle):", idleSounds)
 		if err != nil {
@@ -109,7 +135,6 @@ func main() {
 		}
 	}
 
-	// 2. Select Permission Sound
 	for {
 		selected, err := selectMenu("Choose a sound for Permission Prompts:", permSounds)
 		if err != nil {
@@ -122,56 +147,13 @@ func main() {
 		}
 	}
 
-	// 3. Write Plugin File
-	homeDir, err := os.UserHomeDir()
+	err := writePluginFile(idleSound, permSound)
 	if err != nil {
-		fmt.Println("Failed to find home directory:", err)
-		return
-	}
-
-	pluginDir := filepath.Join(homeDir, ".opencode", "plugins")
-	pluginPath := filepath.Join(pluginDir, "notification.js")
-
-	if err := os.MkdirAll(pluginDir, 0755); err != nil {
-		fmt.Println("Failed to create plugin directory:", err)
-		return
-	}
-
-	pluginContent := fmt.Sprintf(`export default async ({ project, client, $, directory, worktree }) => {   return {     event: async ({ event }) => {       if (event.type === "session.idle") {         await $`+"`"+`osascript -e '
-          set prevVolume to output volume of (get volume settings)
-          set volume output volume (prevVolume * 0.3)
-          do shell script "afplay /System/Library/Sounds/%s.aiff"
-		  display notification "Task completed" with title "opencode"
-          delay 0.1
-          set volume output volume prevVolume
-        '`+"`"+`
-      } else if (
-        event.type === "permission.asked" ||
-        event.type === "permission.requested" ||
-        event.type === "permission.ask"
-      ) {
-        await $`+"`"+`osascript -e '
-          set prevVolume to output volume of (get volume settings)
-          set volume output volume (prevVolume * 0.3)
-          do shell script "afplay /System/Library/Sounds/%s.aiff"
-  		  display notification "Permission Required" with title "opencode"
-          delay 0.1
-          set volume output volume prevVolume
-        '`+"`"+`
-      }
-    },
-  }
-}
-`, idleSound, permSound)
-
-	if err := os.WriteFile(pluginPath, []byte(pluginContent), 0644); err != nil {
-		fmt.Println("Failed to write plugin file:", err)
-		return
+		fmt.Println("Error writing file:", err)
 	}
 
 	fmt.Print("\033[H\033[2J") // Clear terminal screen
 	fmt.Println("✅ Installation Complete!")
 	fmt.Printf(" • Session Idle Sound: %s\n", idleSound)
 	fmt.Printf(" • Permission Sound:  %s\n", permSound)
-	fmt.Printf(" • Installed to:       %s\n\n", pluginPath)
 }
