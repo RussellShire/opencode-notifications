@@ -11,6 +11,10 @@ Clone this repo and from the folder run:
 
 ```$ ./install-notifications```
 
+## Test
+
+```npm test```
+
 ## Build
 
 ```chmod +x build.sh```
