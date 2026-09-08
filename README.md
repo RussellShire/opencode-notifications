@@ -15,6 +15,14 @@ Clone this repo and from the folder run:
 
 ```npm test```
 
+```go test ./...```
+
+## Event Logging
+
+- Enable: ```touch .notification-event-logging```
+- Disable: ```rm .notification-event-logging```
+- View: ```jq . .notification-events.jsonl```
+
 ## Build
 
 ```chmod +x build.sh```

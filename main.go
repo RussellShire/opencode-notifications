@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,8 +16,11 @@ import (
 var pluginTemplate string
 
 var (
-	idleSounds = []string{"Glass", "Ping", "Hero", "Submarine", "Purr"}
-	permSounds = []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}
+	idleSounds  = []string{"Glass", "Ping", "Hero", "Submarine", "Purr"}
+	permSounds  = []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}
+	userHomeDir = os.UserHomeDir
+	mkdirAll    = os.MkdirAll
+	writeFile   = os.WriteFile
 )
 
 func playSound(soundName string) {
@@ -92,7 +96,7 @@ func confirmChoice(prompt string) bool {
 }
 
 func writePluginFile(idleSound, permSound string) error {
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := userHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to locate home directory: %w", err)
 	}
@@ -100,20 +104,80 @@ func writePluginFile(idleSound, permSound string) error {
 	pluginDir := filepath.Join(homeDir, ".config", "opencode", "plugins")
 	pluginPath := filepath.Join(pluginDir, "notifications.js")
 
-	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+	if err := mkdirAll(pluginDir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	// Replace the placeholders with the selected sound names
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to locate working directory: %w", err)
+	}
+
+	markerPath, logPath, err := diagnosticsPaths(workingDir)
+	if err != nil {
+		return err
+	}
+
+	// Replace the placeholders with the selected sound names and diagnostics paths.
 	content := strings.ReplaceAll(pluginTemplate, "{{IDLE_SOUND}}", idleSound)
 	content = strings.ReplaceAll(content, "{{PERM_SOUND}}", permSound)
+	content = strings.ReplaceAll(content, "/* {{DIAGNOSTICS_MARKER_PATH}} */ null", markerPath)
+	content = strings.ReplaceAll(content, "/* {{DIAGNOSTICS_LOG_PATH}} */ null", logPath)
 
 	// Write out the processed file
-	if err := os.WriteFile(pluginPath, []byte(content), 0644); err != nil {
+	if err := writeFile(pluginPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
 	return nil
+}
+
+func diagnosticsPaths(workingDir string) (string, string, error) {
+	for directory := workingDir; ; directory = filepath.Dir(directory) {
+		if isGitRepositoryRoot(directory) {
+			markerPath, err := json.Marshal(filepath.Join(directory, ".notification-event-logging"))
+			if err != nil {
+				return "", "", fmt.Errorf("failed to JSON encode diagnostics marker path: %w", err)
+			}
+			logPath, err := json.Marshal(filepath.Join(directory, ".notification-events.jsonl"))
+			if err != nil {
+				return "", "", fmt.Errorf("failed to JSON encode diagnostics log path: %w", err)
+			}
+			return string(markerPath), string(logPath), nil
+		}
+
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			return "null", "null", nil
+		}
+	}
+}
+
+func isGitRepositoryRoot(directory string) bool {
+	gitPath := filepath.Join(directory, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return false
+	}
+	if info.IsDir() {
+		return true
+	}
+	if !info.Mode().IsRegular() {
+		return false
+	}
+
+	content, err := os.ReadFile(gitPath)
+	if err != nil {
+		return false
+	}
+
+	worktreePath, found := strings.CutPrefix(string(content), "gitdir: ")
+	if !found {
+		return false
+	}
+	worktreePath = strings.TrimSuffix(worktreePath, "\n")
+	worktreePath = strings.TrimSuffix(worktreePath, "\r")
+	return worktreePath != "" && !strings.ContainsAny(worktreePath, "\r\n")
 }
 
 func main() {
