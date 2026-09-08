@@ -97,7 +97,7 @@ func writePluginFile(idleSound, permSound string) error {
 		return fmt.Errorf("failed to locate home directory: %w", err)
 	}
 
-	pluginDir := filepath.Join(homeDir, ".opencode", "plugins")
+	pluginDir := filepath.Join(homeDir, ".config", "opencode", "plugins")
 	pluginPath := filepath.Join(pluginDir, "notifications.js")
 
 	if err := os.MkdirAll(pluginDir, 0755); err != nil {
