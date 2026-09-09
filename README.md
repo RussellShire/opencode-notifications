@@ -23,8 +23,21 @@ Clone this repo and from the folder run:
 
 ## Event Logging
 
-- Enable: ```touch .notification-event-logging```
-- Disable: ```rm .notification-event-logging```
+- Logging is disabled by default and configured per Git repository.
+- Configuration is stored in `.notification-config.json` at the repository root.
+- Enable: ```./install-notifications --logging on```
+- Disable: ```./install-notifications --logging off```
+- Status: ```./install-notifications --logging status```
+- Set a retention limit by adding `lines` to the configuration, for example:
+
+```json
+{
+  "logging": true,
+  "lines": 100
+}
+```
+
+- `lines` defaults to `100` when omitted or invalid.
 - View: ```jq . .notification-events.jsonl```
 
 ## Build

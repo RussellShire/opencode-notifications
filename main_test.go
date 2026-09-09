@@ -67,13 +67,13 @@ func TestWritePluginFileWritesConfiguredPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get working directory: %v", err)
 	}
-	markerPath, logPath, err := diagnosticsPaths(workingDir)
+	configPath, logPath, err := diagnosticsPaths(workingDir)
 	if err != nil {
 		t.Fatalf("get diagnostics paths: %v", err)
 	}
 	wantContent := strings.ReplaceAll(pluginTemplate, "{{IDLE_SOUND}}", "Glass")
 	wantContent = strings.ReplaceAll(wantContent, "{{PERM_SOUND}}", "Funk")
-	wantContent = strings.ReplaceAll(wantContent, "/* {{DIAGNOSTICS_MARKER_PATH}} */ null", markerPath)
+	wantContent = strings.ReplaceAll(wantContent, "/* {{DIAGNOSTICS_CONFIG_PATH}} */ null", configPath)
 	wantContent = strings.ReplaceAll(wantContent, "/* {{DIAGNOSTICS_LOG_PATH}} */ null", logPath)
 	if got := string(gotContent); got != wantContent {
 		t.Errorf("written content = %q, want %q", got, wantContent)
@@ -239,8 +239,8 @@ func setRemoveFile(t *testing.T, remove func(string) error) {
 }
 
 func TestPluginTemplateUsesNullDiagnosticsDefaults(t *testing.T) {
-	if !strings.Contains(pluginTemplate, "const diagnosticsMarkerPath = /* {{DIAGNOSTICS_MARKER_PATH}} */ null") {
-		t.Errorf("template does not provide a null marker-path default: %q", pluginTemplate)
+	if !strings.Contains(pluginTemplate, "const diagnosticsConfigPath = /* {{DIAGNOSTICS_CONFIG_PATH}} */ null") {
+		t.Errorf("template does not provide a null config-path default: %q", pluginTemplate)
 	}
 	if !strings.Contains(pluginTemplate, "const diagnosticsLogPath = /* {{DIAGNOSTICS_LOG_PATH}} */ null") {
 		t.Errorf("template does not provide a null log-path default: %q", pluginTemplate)
@@ -270,9 +270,9 @@ func TestWritePluginFileInjectsDiagnosticsPathsForGitDirectory(t *testing.T) {
 	}
 
 	content := readInstalledPlugin(t)
-	wantMarker := jsonString(t, filepath.Join(resolvedRepoRoot, ".notification-event-logging"))
-	if !strings.Contains(content, "const diagnosticsMarkerPath = "+wantMarker) {
-		t.Errorf("marker path was not injected as a JSON string literal: %q", content)
+	wantConfig := jsonString(t, filepath.Join(resolvedRepoRoot, ".notification-config.json"))
+	if !strings.Contains(content, "const diagnosticsConfigPath = "+wantConfig) {
+		t.Errorf("config path was not injected as a JSON string literal: %q", content)
 	}
 	wantLog := jsonString(t, filepath.Join(resolvedRepoRoot, ".notification-events.jsonl"))
 	if !strings.Contains(content, "const diagnosticsLogPath = "+wantLog) {
@@ -303,9 +303,9 @@ func TestWritePluginFileInjectsJSONEncodedDiagnosticsPathsForGitWorktreeFile(t *
 	}
 
 	content := readInstalledPlugin(t)
-	wantMarker := jsonString(t, filepath.Join(resolvedRepoRoot, ".notification-event-logging"))
-	if !strings.Contains(content, "const diagnosticsMarkerPath = "+wantMarker) {
-		t.Errorf("marker path was not injected as a JSON string literal: %q", content)
+	wantConfig := jsonString(t, filepath.Join(resolvedRepoRoot, ".notification-config.json"))
+	if !strings.Contains(content, "const diagnosticsConfigPath = "+wantConfig) {
+		t.Errorf("config path was not injected as a JSON string literal: %q", content)
 	}
 	wantLog := jsonString(t, filepath.Join(resolvedRepoRoot, ".notification-events.jsonl"))
 	if !strings.Contains(content, "const diagnosticsLogPath = "+wantLog) {
@@ -329,8 +329,8 @@ func TestWritePluginFileDisablesDiagnosticsOutsideGitRepository(t *testing.T) {
 	}
 
 	content := readInstalledPlugin(t)
-	if !strings.Contains(content, "const diagnosticsMarkerPath = null") {
-		t.Errorf("marker path did not disable diagnostics: %q", content)
+	if !strings.Contains(content, "const diagnosticsConfigPath = null") {
+		t.Errorf("config path did not disable diagnostics: %q", content)
 	}
 	if !strings.Contains(content, "const diagnosticsLogPath = null") {
 		t.Errorf("log path did not disable diagnostics: %q", content)
@@ -365,13 +365,84 @@ func TestWritePluginFileDisablesDiagnosticsForMalformedGitWorktreeFile(t *testin
 			}
 
 			content := readInstalledPlugin(t)
-			if !strings.Contains(content, "const diagnosticsMarkerPath = null") {
-				t.Errorf("marker path did not disable diagnostics: %q", content)
+			if !strings.Contains(content, "const diagnosticsConfigPath = null") {
+				t.Errorf("config path did not disable diagnostics: %q", content)
 			}
 			if !strings.Contains(content, "const diagnosticsLogPath = null") {
 				t.Errorf("log path did not disable diagnostics: %q", content)
 			}
 		})
+	}
+}
+
+func TestSetLoggingAndStatusUseRepositoryLocalConfiguration(t *testing.T) {
+	tempDir := t.TempDir()
+	repoRoot := filepath.Join(tempDir, "repository")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git"), 0755); err != nil {
+		t.Fatalf("create git directory: %v", err)
+	}
+	setWorkingDirectory(t, repoRoot)
+
+	enabled, err := loggingStatus()
+	if err != nil {
+		t.Fatalf("get default status: %v", err)
+	}
+	if enabled {
+		t.Error("default logging status = on, want off")
+	}
+	if err := setLogging(true); err != nil {
+		t.Fatalf("enable logging: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(repoRoot, ".notification-config.json"))
+	if err != nil {
+		t.Fatalf("read logging configuration: %v", err)
+	}
+	if got, want := string(content), "{\"logging\":true}\n"; got != want {
+		t.Errorf("configuration = %q, want %q", got, want)
+	}
+	enabled, err = loggingStatus()
+	if err != nil || !enabled {
+		t.Errorf("enabled status = %t, %v; want true, nil", enabled, err)
+	}
+	if err := setLogging(false); err != nil {
+		t.Fatalf("disable logging: %v", err)
+	}
+	enabled, err = loggingStatus()
+	if err != nil || enabled {
+		t.Errorf("disabled status = %t, %v; want false, nil", enabled, err)
+	}
+}
+
+func TestSetLoggingPreservesConfiguredLineLimit(t *testing.T) {
+	tempDir := t.TempDir()
+	repoRoot := filepath.Join(tempDir, "repository")
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".git"), 0755); err != nil {
+		t.Fatalf("create git directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, ".notification-config.json"), []byte("{\"logging\":false,\"lines\":25}\n"), 0600); err != nil {
+		t.Fatalf("write notification configuration: %v", err)
+	}
+	setWorkingDirectory(t, repoRoot)
+
+	if err := setLogging(true); err != nil {
+		t.Fatalf("enable logging: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(repoRoot, ".notification-config.json"))
+	if err != nil {
+		t.Fatalf("read notification configuration: %v", err)
+	}
+	if got, want := string(content), "{\"logging\":true,\"lines\":25}\n"; got != want {
+		t.Errorf("configuration = %q, want %q", got, want)
+	}
+}
+
+func TestLoggingCommandsRequireGitRepository(t *testing.T) {
+	setWorkingDirectory(t, t.TempDir())
+	if err := setLogging(true); err == nil {
+		t.Error("enable logging outside a repository succeeded")
+	}
+	if _, err := loggingStatus(); err == nil {
+		t.Error("status outside a repository succeeded")
 	}
 }
 

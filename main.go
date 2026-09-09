@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ var (
 	mkdirAll    = os.MkdirAll
 	writeFile   = os.WriteFile
 	removeFile  = os.Remove
+	readFile    = os.ReadFile
 )
 
 func playSound(soundName string) {
@@ -114,7 +116,7 @@ func writePluginFile(idleSound, permSound string) error {
 		return fmt.Errorf("failed to locate working directory: %w", err)
 	}
 
-	markerPath, logPath, err := diagnosticsPaths(workingDir)
+	configPath, logPath, err := diagnosticsPaths(workingDir)
 	if err != nil {
 		return err
 	}
@@ -122,7 +124,7 @@ func writePluginFile(idleSound, permSound string) error {
 	// Replace the placeholders with the selected sound names and diagnostics paths.
 	content := strings.ReplaceAll(pluginTemplate, "{{IDLE_SOUND}}", idleSound)
 	content = strings.ReplaceAll(content, "{{PERM_SOUND}}", permSound)
-	content = strings.ReplaceAll(content, "/* {{DIAGNOSTICS_MARKER_PATH}} */ null", markerPath)
+	content = strings.ReplaceAll(content, "/* {{DIAGNOSTICS_CONFIG_PATH}} */ null", configPath)
 	content = strings.ReplaceAll(content, "/* {{DIAGNOSTICS_LOG_PATH}} */ null", logPath)
 
 	// Write out the processed file
@@ -150,15 +152,15 @@ func removePluginFile() error {
 func diagnosticsPaths(workingDir string) (string, string, error) {
 	for directory := workingDir; ; directory = filepath.Dir(directory) {
 		if isGitRepositoryRoot(directory) {
-			markerPath, err := json.Marshal(filepath.Join(directory, ".notification-event-logging"))
+			configPath, err := json.Marshal(filepath.Join(directory, ".notification-config.json"))
 			if err != nil {
-				return "", "", fmt.Errorf("failed to JSON encode diagnostics marker path: %w", err)
+				return "", "", fmt.Errorf("failed to JSON encode diagnostics config path: %w", err)
 			}
 			logPath, err := json.Marshal(filepath.Join(directory, ".notification-events.jsonl"))
 			if err != nil {
 				return "", "", fmt.Errorf("failed to JSON encode diagnostics log path: %w", err)
 			}
-			return string(markerPath), string(logPath), nil
+			return string(configPath), string(logPath), nil
 		}
 
 		parent := filepath.Dir(directory)
@@ -166,6 +168,82 @@ func diagnosticsPaths(workingDir string) (string, string, error) {
 			return "null", "null", nil
 		}
 	}
+}
+
+func loggingConfigPath(workingDir string) (string, error) {
+	configPath, _, err := diagnosticsPaths(workingDir)
+	if err != nil {
+		return "", err
+	}
+	if configPath == "null" {
+		return "", fmt.Errorf("event logging is only available inside a Git repository")
+	}
+
+	var path string
+	if err := json.Unmarshal([]byte(configPath), &path); err != nil {
+		return "", fmt.Errorf("failed to decode diagnostics config path: %w", err)
+	}
+	return path, nil
+}
+
+func setLogging(enabled bool) error {
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to locate working directory: %w", err)
+	}
+	configPath, err := loggingConfigPath(workingDir)
+	if err != nil {
+		return err
+	}
+
+	config := struct {
+		Logging bool `json:"logging"`
+		Lines   *int `json:"lines,omitempty"`
+	}{Logging: enabled}
+	content, err := readFile(configPath)
+	if err == nil {
+		if err := json.Unmarshal(content, &config); err != nil {
+			return fmt.Errorf("failed to parse notification configuration: %w", err)
+		}
+		config.Logging = enabled
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to read notification configuration: %w", err)
+	}
+
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to encode notification configuration: %w", err)
+	}
+	if err := writeFile(configPath, append(encoded, '\n'), 0600); err != nil {
+		return fmt.Errorf("failed to write notification configuration: %w", err)
+	}
+	return nil
+}
+
+func loggingStatus() (bool, error) {
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return false, fmt.Errorf("failed to locate working directory: %w", err)
+	}
+	configPath, err := loggingConfigPath(workingDir)
+	if err != nil {
+		return false, err
+	}
+	content, err := readFile(configPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to read event logging configuration: %w", err)
+	}
+
+	var config struct {
+		Logging bool `json:"logging"`
+	}
+	if err := json.Unmarshal(content, &config); err != nil {
+		return false, fmt.Errorf("failed to parse notification configuration: %w", err)
+	}
+	return config.Logging, nil
 }
 
 func isGitRepositoryRoot(directory string) bool {
@@ -196,6 +274,32 @@ func isGitRepositoryRoot(directory string) bool {
 }
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--logging" {
+		switch os.Args[2] {
+		case "on", "off":
+			enabled := os.Args[2] == "on"
+			if err := setLogging(enabled); err != nil {
+				fmt.Println("Error updating event logging:", err)
+				return
+			}
+			fmt.Printf("Event logging %s.\n", os.Args[2])
+		case "status":
+			enabled, err := loggingStatus()
+			if err != nil {
+				fmt.Println("Error reading event logging status:", err)
+				return
+			}
+			if enabled {
+				fmt.Println("Event logging is on.")
+			} else {
+				fmt.Println("Event logging is off.")
+			}
+		default:
+			fmt.Println("Usage: install-notifications --logging on|off|status")
+		}
+		return
+	}
+
 	if len(os.Args) == 2 && os.Args[1] == "--uninstall" {
 		if err := removePluginFile(); err != nil {
 			fmt.Println("Error removing plugin file:", err)

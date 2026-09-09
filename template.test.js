@@ -1,10 +1,21 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import createPlugin from './template.js'
+import createPluginFactory from './template.js'
+
+const createPlugin = (options) => createPluginFactory({
+    ...options,
+    runAppleScript: async (script) => {
+        if (script.startsWith('output volume') || script.startsWith('alert volume')) return '50'
+        if (script.startsWith('display notification')) {
+            return options.$?.([`osascript -e '${script}'`])
+        }
+        return ''
+    },
+})
 
 const createDiagnosticFileSystem = ({
-    markerExists = true,
+    config = '{"logging":true}',
     log = '',
     readLog,
     rewriteLog,
@@ -15,11 +26,11 @@ const createDiagnosticFileSystem = ({
     return {
         writes,
         rewriteModes,
-        setMarkerExists: (value) => {
-            markerExists = value
+        setConfig: (value) => {
+            config = value
         },
-        markerExists: async () =>
-            typeof markerExists === 'function' ? markerExists() : markerExists,
+        readConfig: async () =>
+            typeof config === 'function' ? config() : config,
         readLog: async () => (readLog ? readLog() : log),
         rewriteLog: async (_path, contents, mode) => {
             if (rewriteLog) await rewriteLog(contents)
@@ -32,12 +43,12 @@ const createDiagnosticFileSystem = ({
 
 const waitForDiagnosticWork = () => new Promise((resolve) => setImmediate(resolve))
 
-test('only session and permission events are recorded when diagnostics are enabled', async () => {
+test('all non-message-part events are recorded when diagnostics are enabled', async () => {
     const fileSystem = createDiagnosticFileSystem()
     const plugin = await createPlugin({
         $: async () => {},
         diagnostics: {
-            markerPath: '/diagnostics-marker',
+            configPath: '/diagnostics-config',
             logPath: '/diagnostics-log',
             fileSystem,
         },
@@ -47,19 +58,19 @@ test('only session and permission events are recorded when diagnostics are enabl
     await plugin.event({ event: { type: 'session.created' } })
     await waitForDiagnosticWork()
 
-    assert.equal(fileSystem.writes.length, 1)
-    assert.deepEqual(JSON.parse(fileSystem.writes[0]), {
-        timestamp: JSON.parse(fileSystem.writes[0]).timestamp,
-        event: { type: 'session.created' },
-    })
+    assert.equal(fileSystem.writes.length, 2)
+    assert.deepEqual(
+        fileSystem.writes.at(-1).trim().split('\n').map(JSON.parse).map(({ event }) => event.type),
+        ['message.updated', 'session.created'],
+    )
 })
 
-test('the marker controls diagnostic logging at the time each operation begins', async () => {
-    const fileSystem = createDiagnosticFileSystem({ markerExists: false })
+test('the configuration controls diagnostic logging at the time each operation begins', async () => {
+    const fileSystem = createDiagnosticFileSystem({ config: '{"logging":false}' })
     const plugin = await createPlugin({
         $: async () => {},
         diagnostics: {
-            markerPath: '/diagnostics-marker',
+            configPath: '/diagnostics-config',
             logPath: '/diagnostics-log',
             fileSystem,
         },
@@ -67,7 +78,7 @@ test('the marker controls diagnostic logging at the time each operation begins',
 
     await plugin.event({ event: { type: 'session.created', properties: {} } })
     await waitForDiagnosticWork()
-    fileSystem.setMarkerExists(true)
+    fileSystem.setConfig('{"logging":true}')
     await plugin.event({ event: { type: 'permission.asked' } })
     await waitForDiagnosticWork()
 
@@ -83,7 +94,7 @@ test('diagnostic records retain event order when events arrive before earlier wr
     const plugin = await createPlugin({
         $: async () => {},
         diagnostics: {
-            markerPath: '/diagnostics-marker',
+            configPath: '/diagnostics-config',
             logPath: '/diagnostics-log',
             fileSystem,
         },
@@ -122,7 +133,7 @@ test('diagnostic logging continues after a log read fails', async () => {
         const plugin = await createPlugin({
             $: async () => {},
             diagnostics: {
-                markerPath: '/diagnostics-marker',
+                configPath: '/diagnostics-config',
                 logPath: '/diagnostics-log',
                 fileSystem,
             },
@@ -155,7 +166,7 @@ test('diagnostic logging continues after a log rewrite fails', async () => {
         const plugin = await createPlugin({
             $: async () => {},
             diagnostics: {
-                markerPath: '/diagnostics-marker',
+                configPath: '/diagnostics-config',
                 logPath: '/diagnostics-log',
                 fileSystem,
             },
@@ -172,7 +183,7 @@ test('diagnostic logging continues after a log rewrite fails', async () => {
     }
 })
 
-test('diagnostic logging retains the newest 49 valid records and ignores malformed lines', async () => {
+test('diagnostic logging retains valid records and ignores malformed lines', async () => {
     const historicRecords = Array.from(
         { length: 51 },
         (_, index) => JSON.stringify({ index }),
@@ -183,7 +194,7 @@ test('diagnostic logging retains the newest 49 valid records and ignores malform
     const plugin = await createPlugin({
         $: async () => {},
         diagnostics: {
-            markerPath: '/diagnostics-marker',
+            configPath: '/diagnostics-config',
             logPath: '/diagnostics-log',
             fileSystem,
         },
@@ -193,18 +204,18 @@ test('diagnostic logging retains the newest 49 valid records and ignores malform
     await waitForDiagnosticWork()
 
     const records = fileSystem.writes[0].trim().split('\n').map(JSON.parse)
-    assert.equal(records.length, 50)
-    assert.deepEqual(records.slice(0, -1).map(({ index }) => index), Array.from({ length: 49 }, (_, index) => index + 2))
+    assert.equal(records.length, 52)
+    assert.deepEqual(records.slice(0, -1).map(({ index }) => index), Array.from({ length: 51 }, (_, index) => index))
     assert.equal(records.at(-1).event.type, 'session.created')
 })
 
-test('a missing diagnostic marker produces no writes or errors', async () => {
-    const missingMarkerError = Object.assign(new Error('marker is missing'), {
+test('a missing diagnostic configuration produces no writes or errors', async () => {
+	const missingConfigError = Object.assign(new Error('configuration is missing'), {
         code: 'ENOENT',
     })
     const fileSystem = createDiagnosticFileSystem({
-        markerExists: () => {
-            throw missingMarkerError
+        config: () => {
+            throw missingConfigError
         },
     })
     const originalConsoleError = console.error
@@ -215,7 +226,7 @@ test('a missing diagnostic marker produces no writes or errors', async () => {
         const plugin = await createPlugin({
             $: async () => {},
             diagnostics: {
-                markerPath: '/diagnostics-marker',
+                configPath: '/diagnostics-config',
                 logPath: '/diagnostics-log',
                 fileSystem,
             },
@@ -231,6 +242,23 @@ test('a missing diagnostic marker produces no writes or errors', async () => {
     }
 })
 
+test('an invalid diagnostic configuration disables logging without reporting an error', async () => {
+    const fileSystem = createDiagnosticFileSystem({ config: '{invalid' })
+    const plugin = await createPlugin({
+        $: async () => {},
+        diagnostics: {
+            configPath: '/diagnostics-config',
+            logPath: '/diagnostics-log',
+            fileSystem,
+        },
+    })
+
+    await plugin.event({ event: { type: 'session.created', properties: {} } })
+    await waitForDiagnosticWork()
+
+    assert.deepEqual(fileSystem.writes, [])
+})
+
 test('a missing diagnostic log produces the first diagnostic write', async () => {
     const missingLogError = Object.assign(new Error('log is missing'), {
         code: 'ENOENT',
@@ -243,7 +271,7 @@ test('a missing diagnostic log produces the first diagnostic write', async () =>
     const plugin = await createPlugin({
         $: async () => {},
         diagnostics: {
-            markerPath: '/diagnostics-marker',
+            configPath: '/diagnostics-config',
             logPath: '/diagnostics-log',
             fileSystem,
         },
@@ -256,15 +284,15 @@ test('a missing diagnostic log produces the first diagnostic write', async () =>
     assert.equal(JSON.parse(fileSystem.writes[0]).event.type, 'session.created')
 })
 
-test('an unexpected marker-access error is reported and later diagnostic logging recovers', async () => {
-    const accessError = Object.assign(new Error('marker access denied'), {
+test('an unexpected configuration-read error is reported and later diagnostic logging recovers', async () => {
+	const accessError = Object.assign(new Error('configuration access denied'), {
         code: 'EACCES',
     })
-    let markerChecks = 0
+    let configReads = 0
     const fileSystem = createDiagnosticFileSystem({
-        markerExists: () => {
-            if (markerChecks++ === 0) throw accessError
-            return true
+        config: () => {
+            if (configReads++ === 0) throw accessError
+            return '{"logging":true}'
         },
     })
     const originalConsoleError = console.error
@@ -275,7 +303,7 @@ test('an unexpected marker-access error is reported and later diagnostic logging
         const plugin = await createPlugin({
             $: async () => {},
             diagnostics: {
-                markerPath: '/diagnostics-marker',
+                configPath: '/diagnostics-config',
                 logPath: '/diagnostics-log',
                 fileSystem,
             },
@@ -298,7 +326,7 @@ test('diagnostic log rewrites request owner-only permissions', async () => {
     const plugin = await createPlugin({
         $: async () => {},
         diagnostics: {
-            markerPath: '/diagnostics-marker',
+            configPath: '/diagnostics-config',
             logPath: '/diagnostics-log',
             fileSystem,
         },
@@ -308,6 +336,71 @@ test('diagnostic log rewrites request owner-only permissions', async () => {
     await waitForDiagnosticWork()
 
     assert.deepEqual(fileSystem.rewriteModes, [0o600])
+})
+
+test('enabled diagnostic logging writes events without handler errors', async () => {
+    const fileSystem = createDiagnosticFileSystem({
+        config: '{"logging":true}',
+    })
+    const plugin = await createPlugin({
+        $: async () => {},
+        diagnostics: {
+            configPath: '/diagnostics-config',
+            logPath: '/diagnostics-log',
+            fileSystem,
+        },
+    })
+
+    await plugin.event({ event: { type: 'session.created', properties: {} } })
+    await waitForDiagnosticWork()
+
+    assert.equal(fileSystem.writes.length, 1)
+    assert.equal(JSON.parse(fileSystem.writes[0]).event.type, 'session.created')
+})
+
+test('diagnostic logging uses the configured line limit', async () => {
+    const log = Array.from({ length: 3 }, (_, index) => JSON.stringify({ index })).join('\n')
+    const fileSystem = createDiagnosticFileSystem({
+        config: '{"logging":true,"lines":2}',
+        log,
+    })
+    const plugin = await createPlugin({
+        $: async () => {},
+        diagnostics: {
+            configPath: '/diagnostics-config',
+            logPath: '/diagnostics-log',
+            fileSystem,
+        },
+    })
+
+    await plugin.event({ event: { type: 'session.created', properties: {} } })
+    await waitForDiagnosticWork()
+
+    const records = fileSystem.writes[0].trim().split('\n').map(JSON.parse)
+    assert.equal(records.length, 2)
+    assert.equal(records[0].index, 2)
+    assert.equal(records[1].event.type, 'session.created')
+})
+
+test('invalid diagnostic line limits use the default limit', async () => {
+    const log = Array.from({ length: 100 }, (_, index) => JSON.stringify({ index })).join('\n')
+    const fileSystem = createDiagnosticFileSystem({
+        config: '{"logging":true,"lines":0}',
+        log,
+    })
+    const plugin = await createPlugin({
+        $: async () => {},
+        diagnostics: {
+            configPath: '/diagnostics-config',
+            logPath: '/diagnostics-log',
+            fileSystem,
+        },
+    })
+
+    await plugin.event({ event: { type: 'session.created', properties: {} } })
+    await waitForDiagnosticWork()
+
+    assert.equal(fileSystem.writes[0].trim().split('\n').length, 100)
 })
 
 test('a permission.asked event displays a permission-required notification', async () => {
