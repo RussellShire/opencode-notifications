@@ -58,10 +58,10 @@ test('all non-message-part events are recorded when diagnostics are enabled', as
     await plugin.event({ event: { type: 'session.created' } })
     await waitForDiagnosticWork()
 
-    assert.equal(fileSystem.writes.length, 2)
+    assert.equal(fileSystem.writes.length, 3)
     assert.deepEqual(
-        fileSystem.writes.at(-1).trim().split('\n').map(JSON.parse).map(({ event }) => event.type),
-        ['message.updated', 'session.created'],
+        fileSystem.writes.at(-1).trim().split('\n').map(JSON.parse).map(({ event }) => event?.type),
+        ['message.updated', 'session.created', undefined],
     )
 })
 
@@ -100,19 +100,21 @@ test('diagnostic records retain event order when events arrive before earlier wr
         },
     })
 
-    await plugin.event({ event: { type: 'session.created', properties: {} } })
-    await plugin.event({ event: { type: 'permission.asked' } })
+    const firstEvent = plugin.event({ event: { type: 'session.created', properties: {} } })
+    const secondEvent = plugin.event({ event: { type: 'permission.asked' } })
     await waitForDiagnosticWork()
 
     assert.equal(pendingReads.length, 1)
-    pendingReads.shift()('')
-    await waitForDiagnosticWork()
-    pendingReads.shift()(fileSystem.writes[0])
-    await waitForDiagnosticWork()
+    for (let index = 0; index < 3; index += 1) {
+        assert.equal(typeof pendingReads[0], 'function')
+        pendingReads.shift()(index === 0 ? '' : fileSystem.writes.at(-1))
+        await waitForDiagnosticWork()
+    }
+    await Promise.all([firstEvent, secondEvent])
 
     assert.deepEqual(
-        fileSystem.writes.at(-1).trim().split('\n').map(JSON.parse).map(({ event }) => event.type),
-        ['session.created', 'permission.asked'],
+        fileSystem.writes.at(-1).trim().split('\n').map(JSON.parse).map(({ event }) => event?.type),
+        ['session.created', undefined, 'permission.asked'],
     )
 })
 
@@ -144,7 +146,13 @@ test('diagnostic logging continues after a log read fails', async () => {
         await waitForDiagnosticWork()
 
         assert.equal(reportedErrors.length, 1)
-        assert.equal(JSON.parse(fileSystem.writes[0]).event.type, 'permission.asked')
+        assert.equal(
+            fileSystem.writes
+                .flatMap((contents) => contents.trim().split('\n').map(JSON.parse))
+                .find(({ event }) => event?.type === 'permission.asked')
+                .event.type,
+            'permission.asked',
+        )
     } finally {
         console.error = originalConsoleError
     }
@@ -177,7 +185,13 @@ test('diagnostic logging continues after a log rewrite fails', async () => {
         await waitForDiagnosticWork()
 
         assert.equal(reportedErrors.length, 1)
-        assert.equal(JSON.parse(fileSystem.writes[0]).event.type, 'permission.asked')
+        assert.equal(
+            fileSystem.writes
+                .flatMap((contents) => contents.trim().split('\n').map(JSON.parse))
+                .find(({ event }) => event?.type === 'permission.asked')
+                .event.type,
+            'permission.asked',
+        )
     } finally {
         console.error = originalConsoleError
     }
@@ -210,7 +224,7 @@ test('diagnostic logging retains valid records and ignores malformed lines', asy
 })
 
 test('a missing diagnostic configuration produces no writes or errors', async () => {
-	const missingConfigError = Object.assign(new Error('configuration is missing'), {
+    const missingConfigError = Object.assign(new Error('configuration is missing'), {
         code: 'ENOENT',
     })
     const fileSystem = createDiagnosticFileSystem({
@@ -280,7 +294,7 @@ test('a missing diagnostic log produces the first diagnostic write', async () =>
     await plugin.event({ event: { type: 'session.created', properties: {} } })
     await waitForDiagnosticWork()
 
-    assert.equal(fileSystem.writes.length, 1)
+    assert.equal(fileSystem.writes.length, 2)
     assert.equal(JSON.parse(fileSystem.writes[0]).event.type, 'session.created')
 })
 
@@ -315,7 +329,13 @@ test('an unexpected configuration-read error is reported and later diagnostic lo
         await waitForDiagnosticWork()
 
         assert.equal(reportedErrors.length, 1)
-        assert.equal(JSON.parse(fileSystem.writes[0]).event.type, 'permission.asked')
+        assert.equal(
+            fileSystem.writes
+                .flatMap((contents) => contents.trim().split('\n').map(JSON.parse))
+                .find(({ event }) => event?.type === 'permission.asked')
+                .event.type,
+            'permission.asked',
+        )
     } finally {
         console.error = originalConsoleError
     }
@@ -335,7 +355,7 @@ test('diagnostic log rewrites request owner-only permissions', async () => {
     await plugin.event({ event: { type: 'session.created', properties: {} } })
     await waitForDiagnosticWork()
 
-    assert.deepEqual(fileSystem.rewriteModes, [0o600])
+    assert.deepEqual(fileSystem.rewriteModes, [0o600, 0o600])
 })
 
 test('enabled diagnostic logging writes events without handler errors', async () => {
@@ -354,7 +374,7 @@ test('enabled diagnostic logging writes events without handler errors', async ()
     await plugin.event({ event: { type: 'session.created', properties: {} } })
     await waitForDiagnosticWork()
 
-    assert.equal(fileSystem.writes.length, 1)
+    assert.equal(fileSystem.writes.length, 2)
     assert.equal(JSON.parse(fileSystem.writes[0]).event.type, 'session.created')
 })
 
@@ -401,6 +421,87 @@ test('invalid diagnostic line limits use the default limit', async () => {
     await waitForDiagnosticWork()
 
     assert.equal(fileSystem.writes[0].trim().split('\n').length, 100)
+})
+
+test('handler data writes share retention and evict the oldest record at the configured limit', async () => {
+    const fileSystem = createDiagnosticFileSystem({
+        config: '{"logging":true,"lines":3}',
+    })
+    const plugin = await createPlugin({
+        $: async () => {},
+        diagnostics: {
+            configPath: '/diagnostics-config',
+            logPath: '/diagnostics-log',
+            fileSystem,
+        },
+    })
+
+    await plugin.event({ event: { type: 'session.created', properties: {} } })
+    await plugin.event({ event: { type: 'permission.asked' } })
+    await plugin.event({ event: { type: 'message.updated' } })
+    await waitForDiagnosticWork()
+
+    const records = fileSystem.writes.at(-1).trim().split('\n').map(JSON.parse)
+    assert.deepEqual(records, [
+        { timestamp: records[0].timestamp, data: [null] },
+        { timestamp: records[1].timestamp, event: { type: 'permission.asked' } },
+        { timestamp: records[2].timestamp, event: { type: 'message.updated' } },
+    ])
+})
+
+test('handler data writes are disabled when diagnostic logging is disabled', async () => {
+    const fileSystem = createDiagnosticFileSystem({ config: '{"logging":false}' })
+    const plugin = await createPlugin({
+        $: async () => {},
+        diagnostics: {
+            configPath: '/diagnostics-config',
+            logPath: '/diagnostics-log',
+            fileSystem,
+        },
+    })
+
+    await plugin.event({ event: { type: 'session.created', properties: {} } })
+
+    assert.deepEqual(fileSystem.writes, [])
+})
+
+test('concurrent handler session data writes retain submission-time session IDs in queue order', async () => {
+    const pendingReads = []
+    const fileSystem = createDiagnosticFileSystem({
+        readLog: () => new Promise((resolve) => pendingReads.push(resolve)),
+    })
+    const plugin = await createPlugin({
+        $: async () => {},
+        diagnostics: {
+            configPath: '/diagnostics-config',
+            logPath: '/diagnostics-log',
+            fileSystem,
+        },
+    })
+
+    const firstEvent = plugin.event({
+        event: { type: 'session.created', properties: { sessionID: 'first' } },
+    })
+    const secondEvent = plugin.event({
+        event: { type: 'session.created', properties: { sessionID: 'second' } },
+    })
+    await waitForDiagnosticWork()
+
+    assert.equal(pendingReads.length, 1)
+    for (let index = 0; index < 4; index += 1) {
+        assert.equal(typeof pendingReads[0], 'function')
+        pendingReads.shift()(index === 0 ? '' : fileSystem.writes.at(-1))
+        await waitForDiagnosticWork()
+    }
+    await Promise.all([firstEvent, secondEvent])
+
+    const records = fileSystem.writes.at(-1).trim().split('\n').map(JSON.parse)
+    assert.deepEqual(records.map(({ event, data }) => event?.properties?.sessionID ?? data), [
+        'first',
+        ['first'],
+        'second',
+        ['first', 'second'],
+    ])
 })
 
 test('a permission.asked event displays a permission-required notification', async () => {
@@ -468,7 +569,7 @@ test('an unrelated event displays no notification', async () => {
     assert.deepEqual(commands, [])
 })
 
-test('a matching child idle event removes the child without a notification', async () => {
+test('a child idle event without parent data displays a completion notification', async () => {
     const commands = []
     const plugin = await createPlugin({
         $: async (strings) => commands.push(strings[0]),
@@ -484,10 +585,12 @@ test('a matching child idle event removes the child without a notification', asy
         event: { type: 'session.idle', properties: { sessionID: 'child' } },
     })
 
-    assert.deepEqual(commands, [])
+    assert.deepEqual(commands, [
+        `osascript -e 'display notification "Task completed" with title "OpenCode" sound name "{{IDLE_SOUND}}"'`,
+    ])
 })
 
-test('root completion remains suppressed until every child has finished', async () => {
+test('root completion remains suppressed while session IDs remain tracked', async () => {
     const commands = []
     const plugin = await createPlugin({
         $: async (strings) => commands.push(strings[0]),
@@ -515,9 +618,7 @@ test('root completion remains suppressed until every child has finished', async 
     })
     await plugin.event({ event: { type: 'session.idle' } })
 
-    assert.deepEqual(commands, [
-        `osascript -e 'display notification "Task completed" with title "OpenCode" sound name "{{IDLE_SOUND}}"'`,
-    ])
+    assert.deepEqual(commands, [])
 })
 
 for (const [parentKey, sessionKey] of [
@@ -527,7 +628,7 @@ for (const [parentKey, sessionKey] of [
     ['parentId', 'sessionID'],
     ['parentId', 'id'],
 ]) {
-    test(`a child created with ${parentKey} and ${sessionKey} suppresses then permits ID-less completion`, async () => {
+    test(`a child created with ${parentKey} and ${sessionKey} keeps ID-less completion suppressed`, async () => {
         const commands = []
         const plugin = await createPlugin({
             $: async (strings) => commands.push(strings[0]),
@@ -547,13 +648,11 @@ for (const [parentKey, sessionKey] of [
         })
         await plugin.event({ event: { type: 'session.idle' } })
 
-        assert.deepEqual(commands, [
-            `osascript -e 'display notification "Task completed" with title "OpenCode" sound name "{{IDLE_SOUND}}"'`,
-        ])
+        assert.deepEqual(commands, [])
     })
 }
 
-test('a child created with parentId and sessionId suppresses then permits ID-less completion', async () => {
+test('a child created with parentId and sessionId keeps ID-less completion suppressed', async () => {
     const commands = []
     const plugin = await createPlugin({
         $: async (strings) => commands.push(strings[0]),
@@ -571,9 +670,7 @@ test('a child created with parentId and sessionId suppresses then permits ID-les
     })
     await plugin.event({ event: { type: 'session.idle' } })
 
-    assert.deepEqual(commands, [
-        `osascript -e 'display notification "Task completed" with title "OpenCode" sound name "{{IDLE_SOUND}}"'`,
-    ])
+    assert.deepEqual(commands, [])
 })
 
 test('a permission request notifies while a child is tracked', async () => {
@@ -595,7 +692,7 @@ test('a permission request notifies while a child is tracked', async () => {
     ])
 })
 
-test('a duplicate child idle event displays a notification after the child was removed', async () => {
+test('duplicate child idle events without parent data each display a notification', async () => {
     const commands = []
     const plugin = await createPlugin({
         $: async (strings) => commands.push(strings[0]),
@@ -616,6 +713,7 @@ test('a duplicate child idle event displays a notification after the child was r
 
     assert.deepEqual(commands, [
         `osascript -e 'display notification "Task completed" with title "OpenCode" sound name "{{IDLE_SOUND}}"'`,
+        `osascript -e 'display notification "Task completed" with title "OpenCode" sound name "{{IDLE_SOUND}}"'`,
     ])
 })
 
@@ -634,7 +732,7 @@ test('an untracked idle session ID displays a task-completed notification', asyn
     ])
 })
 
-test('an idle session.status child event using id removes the child without a notification', async () => {
+test('an idle session.status child event without parent data displays a notification', async () => {
     const commands = []
     const plugin = await createPlugin({
         $: async (strings) => commands.push(strings[0]),
@@ -653,7 +751,9 @@ test('an idle session.status child event using id removes the child without a no
         },
     })
 
-    assert.deepEqual(commands, [])
+    assert.deepEqual(commands, [
+        `osascript -e 'display notification "Task completed" with title "OpenCode" sound name "{{IDLE_SOUND}}"'`,
+    ])
 })
 
 test('an empty event envelope displays no notification', async () => {

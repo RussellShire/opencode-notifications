@@ -44,7 +44,7 @@ const validRecords = (log) =>
         })
 
 export default async ({ project, client, $, directory, worktree, diagnostics = {}, runAppleScript: injectedRunAppleScript }) => {
-    const runningAgents = new Set()
+    const runningSessionIds = []
     const diagnosticsConfigPath = /* {{DIAGNOSTICS_CONFIG_PATH}} */ null
     const diagnosticsLogPath = /* {{DIAGNOSTICS_LOG_PATH}} */ null
     const configPath = diagnostics.configPath ?? diagnosticsConfigPath
@@ -52,7 +52,7 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
     const fileSystem = diagnostics.fileSystem ?? diagnosticFileSystem
     let diagnosticQueue = Promise.resolve()
 
-    const writeDiagnosticEvent = async (event) => {
+    const writeDiagnosticRecord = async (record) => {
         if (!configPath || !logPath) return
 
         let lines = defaultDiagnosticLines
@@ -75,7 +75,7 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
         }
 
         const records = validRecords(log)
-        records.push({ timestamp: new Date().toISOString(), event })
+        records.push({ timestamp: new Date().toISOString(), ...record })
         await fileSystem.rewriteLog(
             logPath,
             `${records.slice(-lines).map(JSON.stringify).join('\n')}\n`,
@@ -83,11 +83,15 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
         )
     }
 
-    const enqueueDiagnosticEvent = (event) => {
+    const enqueueDiagnosticRecord = (record) => {
         diagnosticQueue = diagnosticQueue
-            .then(() => writeDiagnosticEvent(event))
+            .then(() => writeDiagnosticRecord(record))
             .catch((error) => console.error('Failed to log notification event:', error))
+        return diagnosticQueue
     }
+
+    const enqueueDiagnosticEvent = (event) => enqueueDiagnosticRecord({ event })
+    const writeToLog = (data) => enqueueDiagnosticRecord({ data })
 
     const defaultRunAppleScript = async (script) => {
         const { stdout } = await execFileAsync('osascript', ['-e', script]);
@@ -118,7 +122,6 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
     return {
         event: async (payload) => {
             const { event } = payload ?? {}
-
             if (!event) return
 
             if (!event.type?.startsWith('message.part.')) {
@@ -130,41 +133,43 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
                 event.properties?.sessionID ??
                 event.properties?.sessionId ??
                 event.properties?.id
-            const hasSessionID =
-                Object.hasOwn(event.properties ?? {}, "sessionID") ||
-                Object.hasOwn(event.properties ?? {}, "sessionId") ||
-                Object.hasOwn(event.properties ?? {}, "id")
 
-            if (event.type === "session.created" && parentID && sessionID) {
-                runningAgents.add(sessionID)
-                return
+            // Record new session Ids
+            if (event.type?.startsWith('session.') && !runningSessionIds.includes(sessionID)) {
+                runningSessionIds.push(sessionID)
+                await writeToLog([...runningSessionIds])
             }
 
-            if (event.type === "permission.asked") {
+            if (event.type === "permission.asked" && !parentID) {
                 await sendNotification("Permission required", "{{PERM_SOUND}}")
                 return
             }
 
-            if (event.type === "question.asked") {
+            if (event.type === "question.asked" && !parentID) {
                 await sendNotification("Question asked", "{{PERM_SOUND}}")
                 return
             }
 
             const isIdle =
                 event.type === "session.idle" ||
-                (event.type === "session.status" &&
-                    event.properties?.status?.type === "idle")
+                (event.type === "session.status" && event.properties?.status?.type === "idle")
 
             if (!isIdle) return
+            await writeToLog([...runningSessionIds])
 
-            if (hasSessionID && !parentID) {
-                if (runningAgents.delete(sessionID)) return
+            // Remove idle session ids if they're a child session
+            if (sessionID && parentID) {
+                runningSessionIds.splice(runningSessionIds.indexOf(sessionID), 1)
+                await writeToLog([...runningSessionIds])
             }
 
-            if (runningAgents.size !== 0) return
+            await writeToLog([...runningSessionIds])
 
-            // await $`osascript -e 'display notification "Task completed" with title "OpenCode" sound name "{{IDLE_SOUND}}"'`
+            // If there is more than one session then we can assume a child is running
+            if (runningSessionIds.length > 1) return
+
             await sendNotification("Task completed", "{{IDLE_SOUND}}")
+            runningSessionIds.splice(runningSessionIds.indexOf(sessionID), 1)
         },
     }
 }
