@@ -21,6 +21,7 @@ var (
 	userHomeDir = os.UserHomeDir
 	mkdirAll    = os.MkdirAll
 	writeFile   = os.WriteFile
+	removeFile  = os.Remove
 )
 
 func playSound(soundName string) {
@@ -132,6 +133,20 @@ func writePluginFile(idleSound, permSound string) error {
 	return nil
 }
 
+func removePluginFile() error {
+	homeDir, err := userHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to locate home directory: %w", err)
+	}
+
+	pluginPath := filepath.Join(homeDir, ".config", "opencode", "plugins", "notifications.js")
+	if err := removeFile(pluginPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove plugin file: %w", err)
+	}
+
+	return nil
+}
+
 func diagnosticsPaths(workingDir string) (string, string, error) {
 	for directory := workingDir; ; directory = filepath.Dir(directory) {
 		if isGitRepositoryRoot(directory) {
@@ -181,6 +196,15 @@ func isGitRepositoryRoot(directory string) bool {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--uninstall" {
+		if err := removePluginFile(); err != nil {
+			fmt.Println("Error removing plugin file:", err)
+			return
+		}
+		fmt.Println("Notification plugin removed.")
+		return
+	}
+
 	fmt.Println("--------------------------------------------------")
 	fmt.Println(" 🔔 Opencode Notification Plugin Installer (Go)")
 	fmt.Println("--------------------------------------------------")

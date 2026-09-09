@@ -138,6 +138,74 @@ func TestWritePluginFileWrapsFilesystemErrors(t *testing.T) {
 	}
 }
 
+func TestRemovePluginFileRemovesOnlyManagedPlugin(t *testing.T) {
+	homeDir := t.TempDir()
+	pluginDir := filepath.Join(homeDir, ".config", "opencode", "plugins")
+	pluginPath := filepath.Join(pluginDir, "notifications.js")
+	siblingPath := filepath.Join(pluginDir, "another-plugin.js")
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		t.Fatalf("create plugin directory: %v", err)
+	}
+	if err := os.WriteFile(pluginPath, []byte("managed plugin"), 0644); err != nil {
+		t.Fatalf("write managed plugin: %v", err)
+	}
+	if err := os.WriteFile(siblingPath, []byte("sibling plugin"), 0644); err != nil {
+		t.Fatalf("write sibling plugin: %v", err)
+	}
+	setUserHomeDir(t, func() (string, error) { return homeDir, nil })
+
+	if err := removePluginFile(); err != nil {
+		t.Fatalf("remove plugin file: %v", err)
+	}
+
+	if _, err := os.Stat(pluginPath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("managed plugin stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(siblingPath); err != nil {
+		t.Errorf("stat sibling plugin: %v", err)
+	}
+	if info, err := os.Stat(pluginDir); err != nil || !info.IsDir() {
+		t.Errorf("plugin directory stat = %v, want existing directory", err)
+	}
+}
+
+func TestRemovePluginFileAllowsMissingPlugin(t *testing.T) {
+	setUserHomeDir(t, func() (string, error) { return t.TempDir(), nil })
+
+	if err := removePluginFile(); err != nil {
+		t.Fatalf("remove missing plugin file: %v", err)
+	}
+}
+
+func TestRemovePluginFileWrapsFilesystemErrors(t *testing.T) {
+	sentinel := errors.New("injected failure")
+
+	t.Run("home directory lookup", func(t *testing.T) {
+		setUserHomeDir(t, func() (string, error) { return "", sentinel })
+
+		err := removePluginFile()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("error = %v, want wrapped %v", err, sentinel)
+		}
+		if !strings.Contains(err.Error(), "failed to locate home directory") {
+			t.Errorf("error = %q, want home-directory context", err)
+		}
+	})
+
+	t.Run("file removal", func(t *testing.T) {
+		setUserHomeDir(t, func() (string, error) { return t.TempDir(), nil })
+		setRemoveFile(t, func(string) error { return sentinel })
+
+		err := removePluginFile()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("error = %v, want wrapped %v", err, sentinel)
+		}
+		if !strings.Contains(err.Error(), "failed to remove plugin file") {
+			t.Errorf("error = %q, want removal context", err)
+		}
+	})
+}
+
 func setUserHomeDir(t *testing.T, lookup func() (string, error)) {
 	t.Helper()
 
@@ -160,6 +228,14 @@ func setWriteFile(t *testing.T, write func(string, []byte, os.FileMode) error) {
 	original := writeFile
 	writeFile = write
 	t.Cleanup(func() { writeFile = original })
+}
+
+func setRemoveFile(t *testing.T, remove func(string) error) {
+	t.Helper()
+
+	original := removeFile
+	removeFile = remove
+	t.Cleanup(func() { removeFile = original })
 }
 
 func TestPluginTemplateUsesNullDiagnosticsDefaults(t *testing.T) {

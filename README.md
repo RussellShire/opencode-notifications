@@ -11,6 +11,10 @@ Clone this repo and from the folder run:
 
 ```$ ./install-notifications```
 
+## Uninstall
+
+```./install-notifications --uninstall```
+
 ## Test
 
 ```npm test```
