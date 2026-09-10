@@ -20,7 +20,6 @@ var pluginTemplate string
 var (
 	macIdleSounds   = []string{"Glass", "Ping", "Hero", "Submarine", "Purr"}
 	macPermSounds   = []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}
-	windowsSounds   = []string{"Asterisk", "Beep", "Exclamation", "Hand", "Question"}
 	operatingSystem = runtime.GOOS
 	userHomeDir     = os.UserHomeDir
 	mkdirAll        = os.MkdirAll
@@ -38,19 +37,10 @@ var (
 )
 
 func soundOptions() ([]string, []string) {
-	if operatingSystem == "windows" {
-		return windowsSounds, windowsSounds
-	}
 	return macIdleSounds, macPermSounds
 }
 
 func playSound(soundName string) {
-	if operatingSystem == "windows" {
-		script := fmt.Sprintf(`[System.Media.SystemSounds]::%s.Play()`, soundName)
-		_ = startCommand("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
-		return
-	}
-
 	soundPath := fmt.Sprintf("/System/Library/Sounds/%s.aiff", soundName)
 	_ = startCommand("afplay", soundPath)
 }
@@ -335,6 +325,15 @@ func main() {
 	fmt.Println("--------------------------------------------------")
 	fmt.Println(" 🔔 Opencode Notification Plugin Installer (Go)")
 	fmt.Println("--------------------------------------------------")
+
+	if operatingSystem == "windows" {
+		if err := writePluginFile("", ""); err != nil {
+			fmt.Println("Error writing file:", err)
+			return
+		}
+		fmt.Println("✅ Installation Complete! Using standard Windows notifications.")
+		return
+	}
 
 	var idleSound, permSound string
 	idleSounds, permSounds := soundOptions()

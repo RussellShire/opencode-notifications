@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -206,16 +207,26 @@ func TestRemovePluginFileWrapsFilesystemErrors(t *testing.T) {
 	})
 }
 
-func TestSoundOptionsUseWindowsSounds(t *testing.T) {
+func TestWindowsInstallerWritesPluginWithoutSelectingSounds(t *testing.T) {
 	setOperatingSystem(t, "windows")
+	homeDir := t.TempDir()
+	setUserHomeDir(t, func() (string, error) { return homeDir, nil })
 
-	idleSounds, permSounds := soundOptions()
-	if got, want := idleSounds, []string{"Asterisk", "Beep", "Exclamation", "Hand", "Question"}; !equalStrings(got, want) {
-		t.Errorf("idle sounds = %v, want %v", got, want)
+	output := captureStdout(t, main)
+	content, err := os.ReadFile(filepath.Join(homeDir, ".config", "opencode", "plugins", "notifications.js"))
+	if err != nil {
+		t.Fatalf("read installed plugin: %v", err)
 	}
-	if got, want := permSounds, []string{"Asterisk", "Beep", "Exclamation", "Hand", "Question"}; !equalStrings(got, want) {
-		t.Errorf("permission sounds = %v, want %v", got, want)
+	if strings.Contains(string(content), "{{IDLE_SOUND}}") || strings.Contains(string(content), "{{PERM_SOUND}}") {
+		t.Errorf("installed plugin contains unprocessed sound placeholders: %q", content)
 	}
+	if !strings.Contains(string(content), "System.Windows.Forms.NotifyIcon") {
+		t.Errorf("installed plugin does not contain the Windows notification implementation: %q", content)
+	}
+	if !strings.Contains(output, "standard Windows notifications") {
+		t.Errorf("installer output = %q, want standard Windows notifications completion message", output)
+	}
+	importPluginFile(t, filepath.Join(homeDir, ".config", "opencode", "plugins", "notifications.js"))
 }
 
 func TestSoundOptionsUseMacSounds(t *testing.T) {
@@ -227,26 +238,6 @@ func TestSoundOptionsUseMacSounds(t *testing.T) {
 	}
 	if got, want := permSounds, []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}; !equalStrings(got, want) {
 		t.Errorf("permission sounds = %v, want %v", got, want)
-	}
-}
-
-func TestPlaySoundUsesWindowsSystemSoundPreview(t *testing.T) {
-	setOperatingSystem(t, "windows")
-	var gotName string
-	var gotArgs []string
-	setStartCommand(t, func(name string, args ...string) error {
-		gotName = name
-		gotArgs = args
-		return nil
-	})
-
-	playSound("Question")
-
-	if got, want := gotName, "powershell.exe"; got != want {
-		t.Errorf("command = %q, want %q", got, want)
-	}
-	if got, want := gotArgs, []string{"-NoProfile", "-NonInteractive", "-Command", "[System.Media.SystemSounds]::Question.Play()"}; !equalStrings(got, want) {
-		t.Errorf("arguments = %v, want %v", got, want)
 	}
 }
 
@@ -316,6 +307,31 @@ func setStartCommand(t *testing.T, start func(string, ...string) error) {
 	original := startCommand
 	startCommand = start
 	t.Cleanup(func() { startCommand = original })
+}
+
+func captureStdout(t *testing.T, run func()) string {
+	t.Helper()
+
+	previous := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+	os.Stdout = writer
+	t.Cleanup(func() { os.Stdout = previous })
+
+	run()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read stdout pipe: %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close stdout pipe reader: %v", err)
+	}
+	return string(output)
 }
 
 func equalStrings(got, want []string) bool {
@@ -580,6 +596,12 @@ func importInstalledPlugin(t *testing.T) {
 		t.Fatalf("write module package configuration: %v", err)
 	}
 	pluginPath := filepath.Join(homeDir, ".config", "opencode", "plugins", "notifications.js")
+	importPluginFile(t, pluginPath)
+}
+
+func importPluginFile(t *testing.T, pluginPath string) {
+	t.Helper()
+
 	pluginURL := (&url.URL{Scheme: "file", Path: pluginPath}).String()
 	output, err := exec.Command("node", "--input-type=module", "--eval", "await import(process.argv[1])", pluginURL).CombinedOutput()
 	if err != nil {

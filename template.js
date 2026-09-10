@@ -105,31 +105,13 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
     }
     const runPowerShell = injectedRunPowerShell ?? defaultRunPowerShell
 
-    const windowsSoundUri = (soundName) =>
-        soundName === 'Ping' || soundName === 'Pop' || soundName === 'Mail'
-            ? 'ms-winsoundevent:Notification.Mail'
-            : soundName === 'Sosumi' || soundName === 'Submarine' || soundName === 'Reminder'
-                ? 'ms-winsoundevent:Notification.Reminder'
-                : 'ms-winsoundevent:Notification.Default'
-
-    const sendWindowsNotification = async (message, soundName) => {
-//         const encodedMessage = Buffer.from(message, 'utf8').toString('base64')
-//         const toastXml = `<toast><visual><binding template="ToastGeneric"><text>OpenCode</text><text></text></binding></visual><audio src="${windowsSoundUri(soundName)}"/></toast>`
-//         await runPowerShell(`[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-// [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
-// $toastXml = New-Object Windows.Data.Xml.Dom.XmlDocument
-// $toastXml.LoadXml('${toastXml}')
-// $toastXml.SelectSingleNode('//text[2]').InnerText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encodedMessage}'))
-// $toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
-// [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast)`)
+    const sendWindowsNotification = async (message) => {
         await runPowerShell(`Add-Type -AssemblyName System.Windows.Forms
 $Notification = New-Object System.Windows.Forms.NotifyIcon
 $Notification.Icon = [System.Drawing.SystemIcons]::Information
 $Notification.BalloonTipTitle = "OpenCode"
 $Notification.BalloonTipText = "${message}"
 $Notification.Visible = $true
-
-[System.Media.SystemSounds]::${soundName}.Play()
 
 $Notification.ShowBalloonTip(10000)`)
     }
@@ -156,7 +138,7 @@ $Notification.ShowBalloonTip(10000)`)
 
     const sendNotification = async (message, soundName) => {
         if (platform === 'win32') {
-            await sendWindowsNotification(message, soundName)
+            await sendWindowsNotification(message)
             return
         }
         if (platform === 'darwin') {
