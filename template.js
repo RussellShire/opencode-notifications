@@ -106,9 +106,9 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
     const runPowerShell = injectedRunPowerShell ?? defaultRunPowerShell
 
     const windowsSoundUri = (soundName) =>
-        soundName === 'Ping' || soundName === 'Pop'
+        soundName === 'Ping' || soundName === 'Pop' || soundName === 'Mail'
             ? 'ms-winsoundevent:Notification.Mail'
-            : soundName === 'Sosumi' || soundName === 'Submarine'
+            : soundName === 'Sosumi' || soundName === 'Submarine' || soundName === 'Reminder'
                 ? 'ms-winsoundevent:Notification.Reminder'
                 : 'ms-winsoundevent:Notification.Default'
 

@@ -206,6 +206,73 @@ func TestRemovePluginFileWrapsFilesystemErrors(t *testing.T) {
 	})
 }
 
+func TestSoundOptionsUseWindowsSounds(t *testing.T) {
+	setOperatingSystem(t, "windows")
+
+	idleSounds, permSounds := soundOptions()
+	if got, want := idleSounds, []string{"Default", "Mail", "Reminder"}; !equalStrings(got, want) {
+		t.Errorf("idle sounds = %v, want %v", got, want)
+	}
+	if got, want := permSounds, []string{"Default", "Mail", "Reminder"}; !equalStrings(got, want) {
+		t.Errorf("permission sounds = %v, want %v", got, want)
+	}
+}
+
+func TestSoundOptionsUseMacSounds(t *testing.T) {
+	setOperatingSystem(t, "darwin")
+
+	idleSounds, permSounds := soundOptions()
+	if got, want := idleSounds, []string{"Glass", "Ping", "Hero", "Submarine", "Purr"}; !equalStrings(got, want) {
+		t.Errorf("idle sounds = %v, want %v", got, want)
+	}
+	if got, want := permSounds, []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}; !equalStrings(got, want) {
+		t.Errorf("permission sounds = %v, want %v", got, want)
+	}
+}
+
+func TestPlaySoundUsesWindowsToastPreview(t *testing.T) {
+	setOperatingSystem(t, "windows")
+	var gotName string
+	var gotArgs []string
+	setStartCommand(t, func(name string, args ...string) error {
+		gotName = name
+		gotArgs = args
+		return nil
+	})
+
+	playSound("Reminder")
+
+	if got, want := gotName, "powershell.exe"; got != want {
+		t.Errorf("command = %q, want %q", got, want)
+	}
+	if got, want := gotArgs[:3], []string{"-NoProfile", "-NonInteractive", "-Command"}; !equalStrings(got, want) {
+		t.Errorf("arguments = %v, want prefix %v", got, want)
+	}
+	if got := gotArgs[3]; !strings.Contains(got, "ms-winsoundevent:Notification.Reminder") || !strings.Contains(got, "Sound preview: Reminder") {
+		t.Errorf("PowerShell script = %q, want Reminder toast preview", got)
+	}
+}
+
+func TestPlaySoundUsesMacAudioPreview(t *testing.T) {
+	setOperatingSystem(t, "darwin")
+	var gotName string
+	var gotArgs []string
+	setStartCommand(t, func(name string, args ...string) error {
+		gotName = name
+		gotArgs = args
+		return nil
+	})
+
+	playSound("Glass")
+
+	if got, want := gotName, "afplay"; got != want {
+		t.Errorf("command = %q, want %q", got, want)
+	}
+	if got, want := gotArgs, []string{"/System/Library/Sounds/Glass.aiff"}; !equalStrings(got, want) {
+		t.Errorf("arguments = %v, want %v", got, want)
+	}
+}
+
 func setUserHomeDir(t *testing.T, lookup func() (string, error)) {
 	t.Helper()
 
@@ -236,6 +303,34 @@ func setRemoveFile(t *testing.T, remove func(string) error) {
 	original := removeFile
 	removeFile = remove
 	t.Cleanup(func() { removeFile = original })
+}
+
+func setOperatingSystem(t *testing.T, value string) {
+	t.Helper()
+
+	original := operatingSystem
+	operatingSystem = value
+	t.Cleanup(func() { operatingSystem = original })
+}
+
+func setStartCommand(t *testing.T, start func(string, ...string) error) {
+	t.Helper()
+
+	original := startCommand
+	startCommand = start
+	t.Cleanup(func() { startCommand = original })
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestPluginTemplateUsesNullDiagnosticsDefaults(t *testing.T) {

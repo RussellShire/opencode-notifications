@@ -577,6 +577,20 @@ test('a Windows Pop notification uses the mail sound URI', async () => {
     assert.match(scripts[0], /ms-winsoundevent:Notification.Mail/)
 })
 
+test('a Windows Mail notification uses the mail sound URI', async () => {
+    const scripts = []
+    const plugin = await createPluginWithSounds({
+        permissionSound: 'Mail',
+        idleSound: 'Default',
+        platform: 'win32',
+        runPowerShell: async (script) => scripts.push(script),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.match(scripts[0], /ms-winsoundevent:Notification.Mail/)
+})
+
 for (const soundName of ['Sosumi', 'Submarine']) {
     test(`a Windows ${soundName} notification uses the reminder sound URI`, async () => {
         const scripts = []
@@ -592,6 +606,20 @@ for (const soundName of ['Sosumi', 'Submarine']) {
         assert.match(scripts[0], /ms-winsoundevent:Notification.Reminder/)
     })
 }
+
+test('a Windows Reminder notification uses the reminder sound URI', async () => {
+    const scripts = []
+    const plugin = await createPluginWithSounds({
+        permissionSound: 'Reminder',
+        idleSound: 'Default',
+        platform: 'win32',
+        runPowerShell: async (script) => scripts.push(script),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.match(scripts[0], /ms-winsoundevent:Notification.Reminder/)
+})
 
 test('a Windows notification with an unknown sound uses the default sound URI', async () => {
     const scripts = []

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"golang.org/x/term"
@@ -17,19 +18,53 @@ import (
 var pluginTemplate string
 
 var (
-	idleSounds  = []string{"Glass", "Ping", "Hero", "Submarine", "Purr"}
-	permSounds  = []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}
-	userHomeDir = os.UserHomeDir
-	mkdirAll    = os.MkdirAll
-	writeFile   = os.WriteFile
-	removeFile  = os.Remove
-	readFile    = os.ReadFile
+	macIdleSounds   = []string{"Glass", "Ping", "Hero", "Submarine", "Purr"}
+	macPermSounds   = []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}
+	windowsSounds   = []string{"Default", "Mail", "Reminder"}
+	operatingSystem = runtime.GOOS
+	userHomeDir     = os.UserHomeDir
+	mkdirAll        = os.MkdirAll
+	writeFile       = os.WriteFile
+	removeFile      = os.Remove
+	readFile        = os.ReadFile
+	startCommand    = func(name string, args ...string) error {
+		command := exec.Command(name, args...)
+		if err := command.Start(); err != nil {
+			return err
+		}
+		go func() { _ = command.Wait() }()
+		return nil
+	}
 )
 
+func soundOptions() ([]string, []string) {
+	if operatingSystem == "windows" {
+		return windowsSounds, windowsSounds
+	}
+	return macIdleSounds, macPermSounds
+}
+
 func playSound(soundName string) {
+	if operatingSystem == "windows" {
+		soundURI := "ms-winsoundevent:Notification.Default"
+		if soundName == "Mail" {
+			soundURI = "ms-winsoundevent:Notification.Mail"
+		} else if soundName == "Reminder" {
+			soundURI = "ms-winsoundevent:Notification.Reminder"
+		}
+
+		script := fmt.Sprintf(`[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+[void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
+$toastXml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$toastXml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>OpenCode</text><text>Sound preview: %s</text></binding></visual><audio src="%s"/></toast>')
+$toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast)`, soundName, soundURI)
+		_ = startCommand("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+		return
+	}
+
 	soundPath := fmt.Sprintf("/System/Library/Sounds/%s.aiff", soundName)
-	cmd := exec.Command("afplay", soundPath)
-	_ = cmd.Start()
+	_ = startCommand("afplay", soundPath)
 }
 
 func selectMenu(title string, options []string) (string, error) {
@@ -314,6 +349,7 @@ func main() {
 	fmt.Println("--------------------------------------------------")
 
 	var idleSound, permSound string
+	idleSounds, permSounds := soundOptions()
 
 	for {
 		selected, err := selectMenu("Choose a sound for Session Completion (idle):", idleSounds)
