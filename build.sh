@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
 set -e
 
-echo "Building Go installer for macOS..."
+echo "Building install-notifications artifacts..."
 
 mkdir -p dist
+rm -rf dist/*
 
-echo " • Building arm64 (Apple Silicon)..."
-GOOS=darwin GOARCH=arm64 go build -o dist/installer-arm64 main.go
+temp_dir=$(mktemp -d)
 
-echo " • Building amd64 (Intel)..."
-GOOS=darwin GOARCH=amd64 go build -o dist/installer-amd64 main.go
+echo " • Building macOS arm64 (Apple Silicon)..."
+GOOS=darwin GOARCH=arm64 go build -o "$temp_dir/install-notifications-darwin-arm64" main.go
 
-echo " • Creating Universal Binary..."
-lipo -create -output install-notifications dist/installer-arm64 dist/installer-amd64
+echo " • Building macOS amd64 (Intel)..."
+GOOS=darwin GOARCH=amd64 go build -o "$temp_dir/install-notifications-darwin-amd64" main.go
 
-rm -rf dist
+echo " • Creating macOS universal binary..."
+lipo -create -output dist/install-notifications "$temp_dir/install-notifications-darwin-arm64" "$temp_dir/install-notifications-darwin-amd64"
+rm -rf "$temp_dir"
 
-echo "✅ Universal binary created: ./install-notifications"
+echo " • Building Windows amd64..."
+GOOS=windows GOARCH=amd64 go build -o dist/install-notifications-windows-amd64.exe main.go
+
+echo " • Building Windows arm64..."
+GOOS=windows GOARCH=arm64 go build -o dist/install-notifications-windows-arm64.exe main.go
+
+echo "Build complete. Artifacts are available in ./dist"
