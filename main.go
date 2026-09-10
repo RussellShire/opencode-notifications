@@ -20,7 +20,7 @@ var pluginTemplate string
 var (
 	macIdleSounds   = []string{"Glass", "Ping", "Hero", "Submarine", "Purr"}
 	macPermSounds   = []string{"Funk", "Basso", "Sosumi", "Blow", "Bottle"}
-	windowsSounds   = []string{"Default", "Mail", "Reminder"}
+	windowsSounds   = []string{"Asterisk", "Beep", "Exclamation", "Hand", "Question"}
 	operatingSystem = runtime.GOOS
 	userHomeDir     = os.UserHomeDir
 	mkdirAll        = os.MkdirAll
@@ -46,19 +46,7 @@ func soundOptions() ([]string, []string) {
 
 func playSound(soundName string) {
 	if operatingSystem == "windows" {
-		soundURI := "ms-winsoundevent:Notification.Default"
-		if soundName == "Mail" {
-			soundURI = "ms-winsoundevent:Notification.Mail"
-		} else if soundName == "Reminder" {
-			soundURI = "ms-winsoundevent:Notification.Reminder"
-		}
-
-		script := fmt.Sprintf(`[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-[void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
-$toastXml = New-Object Windows.Data.Xml.Dom.XmlDocument
-$toastXml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>OpenCode</text><text>Sound preview: %s</text></binding></visual><audio src="%s"/></toast>')
-$toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast)`, soundName, soundURI)
+		script := fmt.Sprintf(`[System.Media.SystemSounds]::%s.Play()`, soundName)
 		_ = startCommand("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 		return
 	}

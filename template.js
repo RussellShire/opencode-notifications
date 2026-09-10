@@ -125,7 +125,7 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
         await runPowerShell(`Add-Type -AssemblyName System.Windows.Forms
 $Notification = New-Object System.Windows.Forms.NotifyIcon
 $Notification.Icon = [System.Drawing.SystemIcons]::Information
-$Notification.BalloonTipIcon = "OpenCode"
+$Notification.BalloonTipTitle = "OpenCode"
 $Notification.BalloonTipText = "${message}"
 $Notification.Visible = $true
 

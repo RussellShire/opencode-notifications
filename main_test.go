@@ -210,10 +210,10 @@ func TestSoundOptionsUseWindowsSounds(t *testing.T) {
 	setOperatingSystem(t, "windows")
 
 	idleSounds, permSounds := soundOptions()
-	if got, want := idleSounds, []string{"Default", "Mail", "Reminder"}; !equalStrings(got, want) {
+	if got, want := idleSounds, []string{"Asterisk", "Beep", "Exclamation", "Hand", "Question"}; !equalStrings(got, want) {
 		t.Errorf("idle sounds = %v, want %v", got, want)
 	}
-	if got, want := permSounds, []string{"Default", "Mail", "Reminder"}; !equalStrings(got, want) {
+	if got, want := permSounds, []string{"Asterisk", "Beep", "Exclamation", "Hand", "Question"}; !equalStrings(got, want) {
 		t.Errorf("permission sounds = %v, want %v", got, want)
 	}
 }
@@ -230,7 +230,7 @@ func TestSoundOptionsUseMacSounds(t *testing.T) {
 	}
 }
 
-func TestPlaySoundUsesWindowsToastPreview(t *testing.T) {
+func TestPlaySoundUsesWindowsSystemSoundPreview(t *testing.T) {
 	setOperatingSystem(t, "windows")
 	var gotName string
 	var gotArgs []string
@@ -240,16 +240,13 @@ func TestPlaySoundUsesWindowsToastPreview(t *testing.T) {
 		return nil
 	})
 
-	playSound("Reminder")
+	playSound("Question")
 
 	if got, want := gotName, "powershell.exe"; got != want {
 		t.Errorf("command = %q, want %q", got, want)
 	}
-	if got, want := gotArgs[:3], []string{"-NoProfile", "-NonInteractive", "-Command"}; !equalStrings(got, want) {
-		t.Errorf("arguments = %v, want prefix %v", got, want)
-	}
-	if got := gotArgs[3]; !strings.Contains(got, "ms-winsoundevent:Notification.Reminder") || !strings.Contains(got, "Sound preview: Reminder") {
-		t.Errorf("PowerShell script = %q, want Reminder toast preview", got)
+	if got, want := gotArgs, []string{"-NoProfile", "-NonInteractive", "-Command", "[System.Media.SystemSounds]::Question.Play()"}; !equalStrings(got, want) {
+		t.Errorf("arguments = %v, want %v", got, want)
 	}
 }
 
