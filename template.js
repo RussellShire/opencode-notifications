@@ -126,8 +126,10 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
 $Notification = New-Object System.Windows.Forms.NotifyIcon
 $Notification.Icon = [System.Drawing.SystemIcons]::Information
 $Notification.BalloonTipIcon = "OpenCode"
-$Notification.BalloonTipText = "Hello"
+$Notification.BalloonTipText = "${message}"
 $Notification.Visible = $true
+
+[System.Media.SystemSounds]::${soundName}.Play()
 
 $Notification.ShowBalloonTip(10000)`)
     }
