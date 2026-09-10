@@ -1,7 +1,7 @@
 # Opencode Notification Plugin
-A quick installer to add a plugin to ~/.config/opencode/plugins/ so you get notifications when you're opencode requires permissions or is ready to be prompted.
+An installer to add a plugin to ~/.config/opencode/plugins/ so you get notifications when you're opencode requires permissions or is ready to be prompted.
 
-There are also pop-ups if you allow notifications for the terminal where you run opencode. On macOS, see System Settings > Notifications.
+You may have to allow notifications for the terminal where you run opencode. On macOS, see System Settings > Notifications.
 
 ## Prerequisites
 
@@ -30,24 +30,25 @@ Installer operations (`install`, `uninstall`, and `logging`) are supported on ma
 
 ## Install
 
-Download the artifact matching your operating system and CPU architecture from `dist/`, then run:
-
 ```sh
 just install
 ```
 
-**Without just**
+**Install Without just**
+
 
 ```sh
 # macOS
+
 ./dist/install-notifications
 ```
-
 ```powershell
-# Windows x64
+# Windows x64 (AMD
+
 .\dist\install-notifications-windows-amd64.exe
 
 # Windows ARM64
+
 .\dist\install-notifications-windows-arm64.exe
 ```
 
@@ -57,18 +58,21 @@ just install
 just uninstall
 ```
 
-**Without just**
+**Unistall Without just**
 
 ```sh
 # macOS
+
 ./dist/install-notifications --uninstall
 ```
 
 ```powershell
 # Windows x64
+
 .\dist\install-notifications-windows-amd64.exe --uninstall
 
 # Windows ARM64
+
 .\dist\install-notifications-windows-arm64.exe --uninstall
 ```
 
@@ -103,7 +107,7 @@ npm test
   ```
 
   ```powershell
-  # Windows x64
+  # Windows x64 (AMD)
   .\dist\install-notifications-windows-amd64.exe --logging on
 
   # Windows ARM64
@@ -124,7 +128,7 @@ npm test
   ```
 
   ```powershell
-  # Windows x64
+  # Windows x64 (AMD)
   .\dist\install-notifications-windows-amd64.exe --logging off
 
   # Windows ARM64
@@ -160,5 +164,5 @@ chmod +x build.sh
 The build outputs are:
 
 - `dist/install-notifications` — macOS universal binary
-- `dist/install-notifications-windows-amd64.exe` — Windows x64
+- `dist/install-notifications-windows-amd64.exe` — Windows x64 (AMD)
 - `dist/install-notifications-windows-arm64.exe` — Windows on ARM

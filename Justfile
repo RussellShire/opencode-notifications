@@ -26,11 +26,11 @@ uninstall:
 # Enable or disable event logging.
 [windows]
 logging action:
-    @if ("{{ action }}" -eq "enable") { just _installer logging-on } elseif ("{{ action }}" -eq "disable") { just _installer logging-off } else { Write-Error "logging action must be enable or disable"; exit 1 }
+    @just _installer {{ if action == "enable" { "logging-on" } else if action == "disable" { "logging-off" } else { error("logging action must be enable or disable") } }}
 
 [unix]
 logging action:
-    @case "{{ action }}" in enable) just _installer logging-on ;; disable) just _installer logging-off ;; *) printf '%s\n' "logging action must be enable or disable" >&2; exit 1 ;; esac
+    @just _installer {{ if action == "enable" { "logging-on" } else if action == "disable" { "logging-off" } else { error("logging action must be enable or disable") } }}
 
 set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
 
