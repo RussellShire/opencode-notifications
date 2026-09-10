@@ -5,8 +5,8 @@ There are also pop-ups if you allow notifications for the terminal where you run
 
 ## Prerequisites
 
-- [`just`](https://github.com/casey/just) for local commands.
-- Go and Node.js/npm to run the test suites.
+- [`just`](https://github.com/casey/just) is optional and provides the primary local commands.
+- Go and Node.js/npm are required to run the test suites.
 - macOS build prerequisites, including `lipo`, to build installer artifacts.
 
 ## Commands
@@ -26,7 +26,7 @@ just logging disable
 
 Available recipes are `test`, `test-go`, `test-js`, `build`, `install`, `uninstall`, and `logging <enable|disable>`.
 
-Installer operations (`install`, `uninstall`, and `logging`) are supported on macOS and Windows through `just`. On Windows, `just` selects the appropriate prebuilt executable for the system architecture.
+Installer operations (`install`, `uninstall`, and `logging`) are supported on macOS and Windows. `just` automatically selects the supported OS and Windows architecture; without `just`, choose the command matching your platform and Windows architecture.
 
 ## Install
 
@@ -36,10 +36,40 @@ Download the artifact matching your operating system and CPU architecture from `
 just install
 ```
 
+**Without just**
+
+```sh
+# macOS
+./dist/install-notifications
+```
+
+```powershell
+# Windows x64
+.\dist\install-notifications-windows-amd64.exe
+
+# Windows ARM64
+.\dist\install-notifications-windows-arm64.exe
+```
+
 ## Uninstall
 
 ```sh
 just uninstall
+```
+
+**Without just**
+
+```sh
+# macOS
+./dist/install-notifications --uninstall
+```
+
+```powershell
+# Windows x64
+.\dist\install-notifications-windows-amd64.exe --uninstall
+
+# Windows ARM64
+.\dist\install-notifications-windows-arm64.exe --uninstall
 ```
 
 ## Test
@@ -48,12 +78,58 @@ just uninstall
 just test
 ```
 
+**Without just**
+
+```sh
+go test ./...
+npm test
+```
+
 ## Event Logging
 
 - Logging is disabled by default and configured per Git repository.
 - Configuration is stored in `.notification-config.json` at the repository root.
-- Enable logging: `just logging enable`
-- Disable logging: `just logging disable`
+- Enable logging:
+
+  ```sh
+  just logging enable
+  ```
+
+  **Without just**
+
+  ```sh
+  # macOS
+  ./dist/install-notifications --logging on
+  ```
+
+  ```powershell
+  # Windows x64
+  .\dist\install-notifications-windows-amd64.exe --logging on
+
+  # Windows ARM64
+  .\dist\install-notifications-windows-arm64.exe --logging on
+  ```
+
+- Disable logging:
+
+  ```sh
+  just logging disable
+  ```
+
+  **Without just**
+
+  ```sh
+  # macOS
+  ./dist/install-notifications --logging off
+  ```
+
+  ```powershell
+  # Windows x64
+  .\dist\install-notifications-windows-amd64.exe --logging off
+
+  # Windows ARM64
+  .\dist\install-notifications-windows-arm64.exe --logging off
+  ```
 - Set a retention limit by adding `lines` to the configuration, for example:
 
 ```json
@@ -72,6 +148,13 @@ just test
 
 ```sh
 just build
+```
+
+**Without just** (macOS only)
+
+```sh
+chmod +x build.sh
+./build.sh
 ```
 
 The build outputs are:
