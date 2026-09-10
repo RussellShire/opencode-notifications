@@ -113,15 +113,23 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
                 : 'ms-winsoundevent:Notification.Default'
 
     const sendWindowsNotification = async (message, soundName) => {
-        const encodedMessage = Buffer.from(message, 'utf8').toString('base64')
-        const toastXml = `<toast><visual><binding template="ToastGeneric"><text>OpenCode</text><text></text></binding></visual><audio src="${windowsSoundUri(soundName)}"/></toast>`
-        await runPowerShell(`[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-[void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
-$toastXml = New-Object Windows.Data.Xml.Dom.XmlDocument
-$toastXml.LoadXml('${toastXml}')
-$toastXml.SelectSingleNode('//text[2]').InnerText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encodedMessage}'))
-$toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast)`)
+//         const encodedMessage = Buffer.from(message, 'utf8').toString('base64')
+//         const toastXml = `<toast><visual><binding template="ToastGeneric"><text>OpenCode</text><text></text></binding></visual><audio src="${windowsSoundUri(soundName)}"/></toast>`
+//         await runPowerShell(`[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+// [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
+// $toastXml = New-Object Windows.Data.Xml.Dom.XmlDocument
+// $toastXml.LoadXml('${toastXml}')
+// $toastXml.SelectSingleNode('//text[2]').InnerText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encodedMessage}'))
+// $toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
+// [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast)`)
+        await runPowerShell(`Add-Type -AssemblyName System.Windows.Forms
+$Notification = New-Object System.Windows.Forms.NotifyIcon
+$Notification.Icon = [System.Drawing.SystemIcons]::Information
+$Notification.BalloonTipIcon = "OpenCode"
+$Notification.BalloonTipText = "Hello"
+$Notification.Visible = $true
+
+$Notification.ShowBalloonTip(10000)`)
     }
 
     const sendMacNotification = async (message, soundName) => {
