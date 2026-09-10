@@ -3,66 +3,57 @@ A quick installer to add a plugin to ~/.config/opencode/plugins/ so you get noti
 
 There are also pop-ups if you allow notifications for the terminal where you run opencode. On macOS, see System Settings > Notifications.
 
-## Install
+## Prerequisites
 
-Download the artifact matching your operating system and CPU architecture from `dist/`.
+- [`just`](https://github.com/casey/just) for local commands.
+- Go and Node.js/npm to run the test suites.
+- macOS build prerequisites, including `lipo`, to build installer artifacts.
 
-### macOS
+## Commands
 
-Use the universal macOS binary:
+Run local commands through `just`:
 
 ```sh
-chmod +x dist/install-notifications
-./dist/install-notifications
+just test
+just test-go
+just test-js
+just build
+just install
+just uninstall
+just logging enable
+just logging disable
 ```
 
-### Windows
+Available recipes are `test`, `test-go`, `test-js`, `build`, `install`, `uninstall`, and `logging <enable|disable>`.
 
-#### Windows x64
+Installer operations (`install`, `uninstall`, and `logging`) are supported on macOS and Windows through `just`. On Windows, `just` selects the appropriate prebuilt executable for the system architecture.
 
-```powershell
-.\dist\install-notifications-windows-amd64.exe
-```
+## Install
 
-#### Windows on ARM
+Download the artifact matching your operating system and CPU architecture from `dist/`, then run:
 
-```powershell
-.\dist\install-notifications-windows-arm64.exe
+```sh
+just install
 ```
 
 ## Uninstall
 
-### macOS
-
 ```sh
-./dist/install-notifications --uninstall
-```
-
-### Windows
-
-In PowerShell, use the executable that matches your installation:
-
-```powershell
-.\dist\install-notifications-windows-amd64.exe --uninstall
+just uninstall
 ```
 
 ## Test
 
 ```sh
-npm test
-```
-
-```sh
-go test ./...
+just test
 ```
 
 ## Event Logging
 
 - Logging is disabled by default and configured per Git repository.
 - Configuration is stored in `.notification-config.json` at the repository root.
-- macOS: `./dist/install-notifications --logging <on|off|status>`
-- Windows (PowerShell): `.\dist\install-notifications-windows-amd64.exe --logging <on|off|status>`
-- On Windows on ARM, replace `windows-amd64.exe` with `windows-arm64.exe`.
+- Enable logging: `just logging enable`
+- Disable logging: `just logging disable`
 - Set a retention limit by adding `lines` to the configuration, for example:
 
 ```json
@@ -77,11 +68,10 @@ go test ./...
 
 ## Build
 
-`build.sh` must run on macOS because it invokes `lipo` to create the universal macOS binary.
+`just build` must run on macOS because it delegates to `build.sh`, which invokes `lipo` to create the universal macOS binary.
 
 ```sh
-chmod +x build.sh
-./build.sh
+just build
 ```
 
 The build outputs are:
