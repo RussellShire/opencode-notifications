@@ -43,7 +43,7 @@ const validRecords = (log) =>
             }
         })
 
-export default async ({ project, client, $, directory, worktree, diagnostics = {}, runAppleScript: injectedRunAppleScript }) => {
+export default async ({ project, client, $, directory, worktree, diagnostics = {}, runAppleScript: injectedRunAppleScript, runPowerShell: injectedRunPowerShell, platform = process.platform }) => {
     const runningSessionIds = []
     const diagnosticsConfigPath = /* {{DIAGNOSTICS_CONFIG_PATH}} */ null
     const diagnosticsLogPath = /* {{DIAGNOSTICS_LOG_PATH}} */ null
@@ -99,7 +99,32 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
     };
     const runAppleScript = injectedRunAppleScript ?? defaultRunAppleScript
 
-    const sendNotification = async (message, soundName) => {
+    const defaultRunPowerShell = async (script) => {
+        const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script])
+        return stdout.trim()
+    }
+    const runPowerShell = injectedRunPowerShell ?? defaultRunPowerShell
+
+    const windowsSoundUri = (soundName) =>
+        soundName === 'Ping' || soundName === 'Pop'
+            ? 'ms-winsoundevent:Notification.Mail'
+            : soundName === 'Sosumi' || soundName === 'Submarine'
+                ? 'ms-winsoundevent:Notification.Reminder'
+                : 'ms-winsoundevent:Notification.Default'
+
+    const sendWindowsNotification = async (message, soundName) => {
+        const encodedMessage = Buffer.from(message, 'utf8').toString('base64')
+        const toastXml = `<toast><visual><binding template="ToastGeneric"><text>OpenCode</text><text></text></binding></visual><audio src="${windowsSoundUri(soundName)}"/></toast>`
+        await runPowerShell(`[void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+[void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
+$toastXml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$toastXml.LoadXml('${toastXml}')
+$toastXml.SelectSingleNode('//text[2]').InnerText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encodedMessage}'))
+$toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier().Show($toast)`)
+    }
+
+    const sendMacNotification = async (message, soundName) => {
         const rawMaster = await runAppleScript('output volume of (get volume settings)');
         const rawAlert = await runAppleScript('alert volume of (get volume settings)');
 
@@ -117,6 +142,19 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
         } finally {
             await runAppleScript(`set volume output volume ${originalMaster} alert volume ${originalAlert}`)
         }
+    }
+
+    const sendNotification = async (message, soundName) => {
+        if (platform === 'win32') {
+            await sendWindowsNotification(message, soundName)
+            return
+        }
+        if (platform === 'darwin') {
+            await sendMacNotification(message, soundName)
+            return
+        }
+
+        return
     }
 
     return {

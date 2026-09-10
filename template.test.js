@@ -1,18 +1,36 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 import createPluginFactory from './template.js'
 
 const createPlugin = (options) => createPluginFactory({
     ...options,
-    runAppleScript: async (script) => {
+    platform: options.platform,
+    runPowerShell: options.runPowerShell,
+    runAppleScript: options.runAppleScript ?? (async (script) => {
         if (script.startsWith('output volume') || script.startsWith('alert volume')) return '50'
         if (script.startsWith('display notification')) {
             return options.$?.([`osascript -e '${script}'`])
         }
         return ''
-    },
+    }),
 })
+
+const createPluginWithSounds = async ({ permissionSound, idleSound, ...options }) => {
+    const source = await readFile(new URL('./template.js', import.meta.url), 'utf8')
+    const { default: createFactory } = await import(
+        `data:text/javascript,${encodeURIComponent(
+            source
+                .replaceAll('{{PERM_SOUND}}', permissionSound)
+                .replaceAll('{{IDLE_SOUND}}', idleSound),
+        )}`,
+    )
+    return createFactory({
+        ...options,
+        runAppleScript: async () => '',
+    })
+}
 
 const createDiagnosticFileSystem = ({
     config = '{"logging":true}',
@@ -515,6 +533,93 @@ test('a permission.asked event displays a permission-required notification', asy
     assert.deepEqual(commands, [
         `osascript -e 'display notification "Permission required" with title "OpenCode" sound name "{{PERM_SOUND}}"'`,
     ])
+})
+
+test('a Windows permission request displays a toast with the OpenCode title and message', async () => {
+    const scripts = []
+    const plugin = await createPlugin({
+        platform: 'win32',
+        runPowerShell: async (script) => scripts.push(script),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.equal(scripts.length, 1)
+    assert.match(scripts[0], /<text>OpenCode<\/text>/)
+    assert.match(scripts[0], /FromBase64String\('UGVybWlzc2lvbiByZXF1aXJlZA=='\)/)
+})
+
+test('a Windows Ping notification uses the mail sound URI', async () => {
+    const scripts = []
+    const plugin = await createPluginWithSounds({
+        permissionSound: 'Ping',
+        idleSound: 'Default',
+        platform: 'win32',
+        runPowerShell: async (script) => scripts.push(script),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.match(scripts[0], /ms-winsoundevent:Notification.Mail/)
+})
+
+test('a Windows Pop notification uses the mail sound URI', async () => {
+    const scripts = []
+    const plugin = await createPluginWithSounds({
+        permissionSound: 'Pop',
+        idleSound: 'Default',
+        platform: 'win32',
+        runPowerShell: async (script) => scripts.push(script),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.match(scripts[0], /ms-winsoundevent:Notification.Mail/)
+})
+
+for (const soundName of ['Sosumi', 'Submarine']) {
+    test(`a Windows ${soundName} notification uses the reminder sound URI`, async () => {
+        const scripts = []
+        const plugin = await createPluginWithSounds({
+            permissionSound: soundName,
+            idleSound: 'Default',
+            platform: 'win32',
+            runPowerShell: async (script) => scripts.push(script),
+        })
+
+        await plugin.event({ event: { type: 'permission.asked' } })
+
+        assert.match(scripts[0], /ms-winsoundevent:Notification.Reminder/)
+    })
+}
+
+test('a Windows notification with an unknown sound uses the default sound URI', async () => {
+    const scripts = []
+    const plugin = await createPluginWithSounds({
+        permissionSound: 'Glass',
+        idleSound: 'Default',
+        platform: 'win32',
+        runPowerShell: async (script) => scripts.push(script),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.match(scripts[0], /ms-winsoundevent:Notification.Default/)
+})
+
+test('an unsupported platform does not invoke either notification runner', async () => {
+    const appleScripts = []
+    const powerShellScripts = []
+    const plugin = await createPlugin({
+        platform: 'linux',
+        runAppleScript: async (script) => appleScripts.push(script),
+        runPowerShell: async (script) => powerShellScripts.push(script),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.deepEqual(appleScripts, [])
+    assert.deepEqual(powerShellScripts, [])
 })
 
 test('a session.idle event displays a task-completed notification', async () => {
