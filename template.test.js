@@ -7,6 +7,8 @@ import createPluginFactory from './template.js'
 const createPlugin = (options) => createPluginFactory({
     ...options,
     platform: options.platform,
+    environment: options.environment,
+    kernelRelease: options.kernelRelease,
     runPowerShell: options.runPowerShell,
     runLinux: options.runLinux,
     runAppleScript: options.runAppleScript ?? (async (script) => {
@@ -541,10 +543,84 @@ test('a Windows permission request displays an information balloon without audio
     assert.doesNotMatch(scripts[0], /System\.Media|ms-winsoundevent/)
 })
 
+test('a WSL environment signal sends a Windows notification instead of notify-send', async () => {
+    const powerShellScripts = []
+    const linuxInvocations = []
+    const plugin = await createPlugin({
+        platform: 'linux',
+        environment: { WSL_DISTRO_NAME: 'Ubuntu' },
+        kernelRelease: '6.8.0-generic',
+        runPowerShell: async (script) => powerShellScripts.push(script),
+        runLinux: async (...arguments_) => linuxInvocations.push(arguments_),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.equal(powerShellScripts.length, 1)
+    assert.match(powerShellScripts[0], /\$Notification\.BalloonTipText = "Permission required"/)
+    assert.deepEqual(linuxInvocations, [])
+})
+
+test('a WSL kernel release signal sends a Windows notification instead of notify-send', async () => {
+    const powerShellScripts = []
+    const linuxInvocations = []
+    const plugin = await createPlugin({
+        platform: 'linux',
+        environment: {},
+        kernelRelease: '6.1.0-MiCrOsOfT-standard',
+        runPowerShell: async (script) => powerShellScripts.push(script),
+        runLinux: async (...arguments_) => linuxInvocations.push(arguments_),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.equal(powerShellScripts.length, 1)
+    assert.match(powerShellScripts[0], /\$Notification\.BalloonTipText = "Permission required"/)
+    assert.deepEqual(linuxInvocations, [])
+})
+
+test('a WSL PowerShell failure is propagated by the event handler', async () => {
+    const error = new Error('powershell.exe is unavailable')
+    const linuxInvocations = []
+    const plugin = await createPlugin({
+        platform: 'linux',
+        environment: { WSL_DISTRO_NAME: 'Ubuntu' },
+        kernelRelease: '6.8.0-generic',
+        runPowerShell: async () => {
+            throw error
+        },
+        runLinux: async (...arguments_) => linuxInvocations.push(arguments_),
+    })
+
+    await assert.rejects(plugin.event({ event: { type: 'permission.asked' } }), error)
+
+    assert.deepEqual(linuxInvocations, [])
+})
+
+test('a kernel release with a mixed-case WSL marker sends a Windows notification instead of notify-send', async () => {
+    const powerShellScripts = []
+    const linuxInvocations = []
+    const plugin = await createPlugin({
+        platform: 'linux',
+        environment: {},
+        kernelRelease: '6.1.0-WsL2-standard',
+        runPowerShell: async (script) => powerShellScripts.push(script),
+        runLinux: async (...arguments_) => linuxInvocations.push(arguments_),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.equal(powerShellScripts.length, 1)
+    assert.match(powerShellScripts[0], /\$Notification\.BalloonTipText = "Permission required"/)
+    assert.deepEqual(linuxInvocations, [])
+})
+
 test('a Linux permission request invokes notify-send with the application name and message', async () => {
     const invocations = []
     const plugin = await createPlugin({
         platform: 'linux',
+        environment: {},
+        kernelRelease: '6.8.0-generic',
         runLinux: async (...arguments_) => invocations.push(arguments_),
     })
 

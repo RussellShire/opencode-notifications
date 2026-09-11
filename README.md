@@ -178,6 +178,10 @@ npm test
 
 Linux notifications invoke `notify-send`. They require a graphical desktop session with a notification service and the `notify-send` executable (provided by libnotify). Delivery is best-effort: if these prerequisites are unavailable, no notification is shown and OpenCode continues without interruption.
 
+### WSL
+
+On WSL, notifications are sent to Windows through `powershell.exe` rather than `notify-send`. WSL interop must be enabled and `powershell.exe` must be reachable. Windows notification permissions apply.
+
 ## Build
 
 `just build` must run on macOS because it delegates to `build.sh`, which invokes `lipo` to create the universal macOS binary.

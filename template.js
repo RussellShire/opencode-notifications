@@ -1,6 +1,7 @@
 import { readFile, rename, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process';
+import { release } from 'node:os'
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -43,7 +44,7 @@ const validRecords = (log) =>
             }
         })
 
-export default async ({ project, client, $, directory, worktree, diagnostics = {}, runAppleScript: injectedRunAppleScript, runPowerShell: injectedRunPowerShell, runLinux: injectedRunLinux, platform = process.platform }) => {
+export default async ({ project, client, $, directory, worktree, diagnostics = {}, runAppleScript: injectedRunAppleScript, runPowerShell: injectedRunPowerShell, runLinux: injectedRunLinux, platform = process.platform, environment = process.env, kernelRelease }) => {
     const runningSessionIds = []
     const diagnosticsConfigPath = /* {{DIAGNOSTICS_CONFIG_PATH}} */ null
     const diagnosticsLogPath = /* {{DIAGNOSTICS_LOG_PATH}} */ null
@@ -157,6 +158,10 @@ $Notification.ShowBalloonTip(10000)`)
             return
         }
         if (platform === 'linux') {
+            if (environment.WSL_DISTRO_NAME !== undefined || /microsoft|wsl/i.test(kernelRelease ?? release())) {
+                await sendWindowsNotification(message)
+                return
+            }
             await sendLinuxNotification(message)
             return
         }
