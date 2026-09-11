@@ -11,15 +11,15 @@ You may have to allow notifications for the terminal where you run opencode. On 
 
 ## Commands
 
-Run local commands through `just`:
+Run local commands through [`just`](https://github.com/casey/just) (alternative commands are listed below if you'd prefer not to install `just`:
 
 ```sh
+just install
+just uninstall
 just test
 just test-go
 just test-js
 just build
-just install
-just uninstall
 just logging enable
 just logging disable
 ```
