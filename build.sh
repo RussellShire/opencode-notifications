@@ -24,4 +24,10 @@ GOOS=windows GOARCH=amd64 go build -o dist/install-notifications-windows-amd64.e
 echo " • Building Windows arm64..."
 GOOS=windows GOARCH=arm64 go build -o dist/install-notifications-windows-arm64.exe main.go
 
+echo " • Building Linux amd64..."
+GOOS=linux GOARCH=amd64 go build -o dist/install-notifications-linux-amd64 main.go
+
+echo " • Building Linux arm64..."
+GOOS=linux GOARCH=arm64 go build -o dist/install-notifications-linux-arm64 main.go
+
 echo "Build complete. Artifacts are available in ./dist"

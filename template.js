@@ -43,7 +43,7 @@ const validRecords = (log) =>
             }
         })
 
-export default async ({ project, client, $, directory, worktree, diagnostics = {}, runAppleScript: injectedRunAppleScript, runPowerShell: injectedRunPowerShell, platform = process.platform }) => {
+export default async ({ project, client, $, directory, worktree, diagnostics = {}, runAppleScript: injectedRunAppleScript, runPowerShell: injectedRunPowerShell, runLinux: injectedRunLinux, platform = process.platform }) => {
     const runningSessionIds = []
     const diagnosticsConfigPath = /* {{DIAGNOSTICS_CONFIG_PATH}} */ null
     const diagnosticsLogPath = /* {{DIAGNOSTICS_LOG_PATH}} */ null
@@ -105,6 +105,11 @@ export default async ({ project, client, $, directory, worktree, diagnostics = {
     }
     const runPowerShell = injectedRunPowerShell ?? defaultRunPowerShell
 
+    const defaultRunLinux = async (executable, arguments_) => {
+        await execFileAsync(executable, arguments_)
+    }
+    const runLinux = injectedRunLinux ?? defaultRunLinux
+
     const sendWindowsNotification = async (message) => {
         await runPowerShell(`Add-Type -AssemblyName System.Windows.Forms
 $Notification = New-Object System.Windows.Forms.NotifyIcon
@@ -136,6 +141,12 @@ $Notification.ShowBalloonTip(10000)`)
         }
     }
 
+    const sendLinuxNotification = async (message) => {
+        try {
+            await runLinux('notify-send', ['--app-name=OpenCode', 'OpenCode', message])
+        } catch {}
+    }
+
     const sendNotification = async (message, soundName) => {
         if (platform === 'win32') {
             await sendWindowsNotification(message)
@@ -143,6 +154,10 @@ $Notification.ShowBalloonTip(10000)`)
         }
         if (platform === 'darwin') {
             await sendMacNotification(message, soundName)
+            return
+        }
+        if (platform === 'linux') {
+            await sendLinuxNotification(message)
             return
         }
 

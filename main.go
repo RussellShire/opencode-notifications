@@ -326,12 +326,16 @@ func main() {
 	fmt.Println(" 🔔 Opencode Notification Plugin Installer (Go)")
 	fmt.Println("--------------------------------------------------")
 
-	if operatingSystem == "windows" {
+	if operatingSystem == "windows" || operatingSystem == "linux" {
 		if err := writePluginFile("", ""); err != nil {
 			fmt.Println("Error writing file:", err)
 			return
 		}
-		fmt.Println("✅ Installation Complete! Using standard Windows notifications.")
+		if operatingSystem == "windows" {
+			fmt.Println("✅ Installation Complete! Using standard Windows notifications.")
+		} else {
+			fmt.Println("✅ Installation Complete! Using notify-send for Linux notifications.")
+		}
 		return
 	}
 

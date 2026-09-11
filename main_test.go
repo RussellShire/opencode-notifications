@@ -229,6 +229,49 @@ func TestWindowsInstallerWritesPluginWithoutSelectingSounds(t *testing.T) {
 	importPluginFile(t, filepath.Join(homeDir, ".config", "opencode", "plugins", "notifications.js"))
 }
 
+func TestLinuxInstallerWritesPluginWithoutSelectingSounds(t *testing.T) {
+	setOperatingSystem(t, "linux")
+	homeDir := t.TempDir()
+	setUserHomeDir(t, func() (string, error) { return homeDir, nil })
+
+	var soundPreviewed bool
+	setStartCommand(t, func(string, ...string) error {
+		soundPreviewed = true
+		return nil
+	})
+
+	output := captureStdout(t, main)
+	content, err := os.ReadFile(filepath.Join(homeDir, ".config", "opencode", "plugins", "notifications.js"))
+	if err != nil {
+		t.Fatalf("read installed plugin: %v", err)
+	}
+	if strings.Contains(string(content), "{{") {
+		t.Errorf("installed plugin contains unprocessed placeholders: %q", content)
+	}
+	if !strings.Contains(string(content), "notify-send") {
+		t.Errorf("installed plugin does not contain the Linux notification implementation: %q", content)
+	}
+	installedPlugin := string(content)
+	for _, message := range []string{"Permission required", "Question asked", "Task completed"} {
+		wantCall := `await sendNotification("` + message + `", "")`
+		if !strings.Contains(installedPlugin, wantCall) {
+			t.Errorf("installed plugin notification for %q does not use an empty sound: %q", message, installedPlugin)
+		}
+	}
+	for _, macSound := range append(macIdleSounds, macPermSounds...) {
+		if strings.Contains(installedPlugin, macSound) {
+			t.Errorf("installed plugin retains macOS sound %q: %q", macSound, installedPlugin)
+		}
+	}
+	if soundPreviewed {
+		t.Error("installer previewed a sound")
+	}
+	if !strings.Contains(output, "Linux notifications") {
+		t.Errorf("installer output = %q, want Linux notifications completion message", output)
+	}
+	importPluginFile(t, filepath.Join(homeDir, ".config", "opencode", "plugins", "notifications.js"))
+}
+
 func TestSoundOptionsUseMacSounds(t *testing.T) {
 	setOperatingSystem(t, "darwin")
 

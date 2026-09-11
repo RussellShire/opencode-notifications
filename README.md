@@ -1,12 +1,12 @@
 # Opencode Notification Plugin
-An installer to add a plugin to ~/.config/opencode/plugins/ so you get notifications when you're opencode requires permissions or is ready to be prompted.
+An installer to add a plugin to `~/.config/opencode/plugins/` so you get notifications when OpenCode requires permissions or is ready for a prompt.
 
 You may have to allow notifications for the terminal where you run opencode. On macOS, see System Settings > Notifications.
 
 ## Prerequisites
 
 - [`just`](https://github.com/casey/just) is optional and provides the primary local commands.
-- Go and Node.js/npm are required to run the test suites.
+- Go and Node.js/npm are development and test prerequisites only; end users do not need to run `npm install`.
 - macOS build prerequisites, including `lipo`, to build installer artifacts.
 
 ## Commands
@@ -26,7 +26,7 @@ just logging disable
 
 Available recipes are `test`, `test-go`, `test-js`, `build`, `install`, `uninstall`, and `logging <enable|disable>`.
 
-Installer operations (`install`, `uninstall`, and `logging`) are supported on macOS and Windows. `just` automatically selects the supported OS and Windows architecture; without `just`, choose the command matching your platform and Windows architecture.
+Installer operations (`install`, `uninstall`, and `logging`) are supported on macOS, Windows, and Linux. `just` automatically selects the supported Unix or Windows architecture; without `just`, choose the command matching your platform and architecture.
 
 ## Install
 
@@ -41,9 +41,17 @@ just install
 # macOS
 
 ./dist/install-notifications
+
+# Linux x86_64/amd64
+
+./dist/install-notifications-linux-amd64
+
+# Linux aarch64/arm64
+
+./dist/install-notifications-linux-arm64
 ```
 ```powershell
-# Windows x64 (AMD
+# Windows x64 (AMD64)
 
 .\dist\install-notifications-windows-amd64.exe
 
@@ -58,12 +66,20 @@ just install
 just uninstall
 ```
 
-**Unistall Without just**
+**Uninstall Without just**
 
 ```sh
 # macOS
 
 ./dist/install-notifications --uninstall
+
+# Linux x86_64/amd64
+
+./dist/install-notifications-linux-amd64 --uninstall
+
+# Linux aarch64/arm64
+
+./dist/install-notifications-linux-arm64 --uninstall
 ```
 
 ```powershell
@@ -102,8 +118,14 @@ npm test
   **Without just**
 
   ```sh
-  # macOS
-  ./dist/install-notifications --logging on
+   # macOS
+   ./dist/install-notifications --logging on
+
+   # Linux x86_64/amd64
+   ./dist/install-notifications-linux-amd64 --logging on
+
+   # Linux aarch64/arm64
+   ./dist/install-notifications-linux-arm64 --logging on
   ```
 
   ```powershell
@@ -123,8 +145,14 @@ npm test
   **Without just**
 
   ```sh
-  # macOS
-  ./dist/install-notifications --logging off
+   # macOS
+   ./dist/install-notifications --logging off
+
+   # Linux x86_64/amd64
+   ./dist/install-notifications-linux-amd64 --logging off
+
+   # Linux aarch64/arm64
+   ./dist/install-notifications-linux-arm64 --logging off
   ```
 
   ```powershell
@@ -146,6 +174,10 @@ npm test
 - `lines` defaults to `100` when omitted or invalid.
 - View: `jq . .notification-events.jsonl`
 
+## Linux Notifications
+
+Linux notifications invoke `notify-send`. They require a graphical desktop session with a notification service and the `notify-send` executable (provided by libnotify). Delivery is best-effort: if these prerequisites are unavailable, no notification is shown and OpenCode continues without interruption.
+
 ## Build
 
 `just build` must run on macOS because it delegates to `build.sh`, which invokes `lipo` to create the universal macOS binary.
@@ -166,3 +198,5 @@ The build outputs are:
 - `dist/install-notifications` — macOS universal binary
 - `dist/install-notifications-windows-amd64.exe` — Windows x64 (AMD)
 - `dist/install-notifications-windows-arm64.exe` — Windows on ARM
+- `dist/install-notifications-linux-amd64` — Linux x86_64/amd64
+- `dist/install-notifications-linux-arm64` — Linux aarch64/arm64

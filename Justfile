@@ -40,4 +40,4 @@ _installer mode:
 
 [unix]
 _installer mode:
-    @if [ "$(uname -s)" != Darwin ]; then printf '%s\n' "Unsupported OS: $(uname -s)" >&2; exit 1; fi; case "{{ mode }}" in install) ./dist/install-notifications ;; uninstall) ./dist/install-notifications --uninstall ;; logging-on) ./dist/install-notifications --logging on ;; logging-off) ./dist/install-notifications --logging off ;; esac
+    @os="$(uname -s)"; arch="$(uname -m)"; case "$os" in Darwin) case "$arch" in x86_64|amd64|aarch64|arm64) artifact="./dist/install-notifications" ;; *) printf 'Unsupported macOS architecture: %s\n' "$arch" >&2; exit 1 ;; esac ;; Linux) case "$arch" in x86_64|amd64) artifact="./dist/install-notifications-linux-amd64" ;; aarch64|arm64) artifact="./dist/install-notifications-linux-arm64" ;; *) printf 'Unsupported Linux architecture: %s\n' "$arch" >&2; exit 1 ;; esac ;; *) printf 'Unsupported OS: %s\n' "$os" >&2; exit 1 ;; esac; case "{{ mode }}" in install) "$artifact" ;; uninstall) "$artifact" --uninstall ;; logging-on) "$artifact" --logging on ;; logging-off) "$artifact" --logging off ;; *) printf 'Unsupported installer mode: %s\n' "{{ mode }}" >&2; exit 1 ;; esac

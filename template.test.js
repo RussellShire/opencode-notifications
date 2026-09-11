@@ -8,6 +8,7 @@ const createPlugin = (options) => createPluginFactory({
     ...options,
     platform: options.platform,
     runPowerShell: options.runPowerShell,
+    runLinux: options.runLinux,
     runAppleScript: options.runAppleScript ?? (async (script) => {
         if (script.startsWith('output volume') || script.startsWith('alert volume')) return '50'
         if (script.startsWith('display notification')) {
@@ -540,25 +541,60 @@ test('a Windows permission request displays an information balloon without audio
     assert.doesNotMatch(scripts[0], /System\.Media|ms-winsoundevent/)
 })
 
+test('a Linux permission request invokes notify-send with the application name and message', async () => {
+    const invocations = []
+    const plugin = await createPlugin({
+        platform: 'linux',
+        runLinux: async (...arguments_) => invocations.push(arguments_),
+    })
+
+    await plugin.event({ event: { type: 'permission.asked' } })
+
+    assert.deepEqual(invocations, [
+        ['notify-send', ['--app-name=OpenCode', 'OpenCode', 'Permission required']],
+    ])
+})
+
+test('a failed Linux notification does not reject the event handler', async () => {
+    const error = new Error('notify-send is unavailable')
+    const invocations = []
+    const plugin = await createPlugin({
+        platform: 'linux',
+        runLinux: async (...arguments_) => {
+            invocations.push(arguments_)
+            throw error
+        },
+    })
+
+    await assert.doesNotReject(plugin.event({ event: { type: 'permission.asked' } }))
+
+    assert.deepEqual(invocations, [
+        ['notify-send', ['--app-name=OpenCode', 'OpenCode', 'Permission required']],
+    ])
+})
+
 test('the Windows implementation contains no legacy toast or sound source', async () => {
     const source = await readFile(new URL('./template.js', import.meta.url), 'utf8')
 
     assert.doesNotMatch(source, /windowsSoundUri|ms-winsoundevent|Windows\.UI\.Notifications|System\.Media/)
 })
 
-test('an unsupported platform does not invoke either notification runner', async () => {
+test('an unsupported platform does not invoke a notification runner', async () => {
     const appleScripts = []
     const powerShellScripts = []
+    const linuxInvocations = []
     const plugin = await createPlugin({
-        platform: 'linux',
+        platform: 'freebsd',
         runAppleScript: async (script) => appleScripts.push(script),
         runPowerShell: async (script) => powerShellScripts.push(script),
+        runLinux: async (...arguments_) => linuxInvocations.push(arguments_),
     })
 
     await plugin.event({ event: { type: 'permission.asked' } })
 
     assert.deepEqual(appleScripts, [])
     assert.deepEqual(powerShellScripts, [])
+    assert.deepEqual(linuxInvocations, [])
 })
 
 test('a session.idle event displays a task-completed notification', async () => {
